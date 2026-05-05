@@ -1,0 +1,11 @@
+{
+  "typescript.tsserver.projectMatcherBase": "${workspaceFolder}",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.extension.ts.referencesCodeLens.enabled": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  }
+}
