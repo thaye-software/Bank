@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nordicbank
+      POSTGRES_PASSWORD: nordicbank
+      POSTGRES_DB: nordicbank
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nordicbank -d nordicbank"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Full containerised stack — only used when you want everything in Docker.
+  # Normal local dev: run only the postgres service above, then npm run dev:server.
+  api:
+    profiles: ["full"]
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://nordicbank:nordicbank@postgres:5432/nordicbank
+      JWT_SECRET: local-dev-secret-minimum-32-chars-do-not-use-in-production-ever
+      JWT_EXPIRES_IN: "7d"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      ASSESSMENT_MODEL: claude-haiku-4-5-20251001
+      CURRENCY_API_KEY: ${CURRENCY_API_KEY:-placeholder}
+      ENABLE_KYC_AUTO_APPROVE: "true"
+      ENABLE_REAL_AI_TESTS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  postgres_data:

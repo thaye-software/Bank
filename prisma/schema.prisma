@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  BUSINESS
+}
+
+enum AccountStatus {
+  PENDING_KYC
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER_OUT
+  TRANSFER_IN
+  FEE
+  INTEREST
+  CURRENCY_CONVERSION
+}
+
+enum TransactionStatus {
+  COMPLETED
+  PENDING_WEEKEND
+  FRAUD_BLOCKED
+  REVIEW_FLAGGED
+  FAILED
+}
+
+enum EmploymentStatus {
+  EMPLOYED
+  SELF_EMPLOYED
+  UNEMPLOYED
+  RETIRED
+}
+
+enum LoanDecision {
+  APPROVED
+  REJECTED
+}
+
+enum DocumentType {
+  PASSPORT
+  NATIONAL_ID
+  DRIVERS_LICENSE
+}
+
+// ── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  password         String
+  fullName         String
+  role             Role              @default(CUSTOMER)
+  kycStatus        KycStatus         @default(NOT_STARTED)
+  accounts         Account[]
+  kycSubmissions   KycSubmission[]
+  loanApplications LoanApplication[]
+  deletedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("users")
+}
+
+model Account {
+  id                String           @id @default(uuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id])
+  type              AccountType
+  status            AccountStatus    @default(PENDING_KYC)
+  balance           Decimal          @default(0) @db.Decimal(15, 2)
+  overdraftEnabled  Boolean          @default(false)
+  reservedBalance   Decimal          @default(0) @db.Decimal(15, 2)
+  transactions      Transaction[]    @relation("AccountTransactions")
+  outgoingTransfers Transaction[]    @relation("TransferSource")
+  incomingTransfers Transaction[]    @relation("TransferDestination")
+  loanApplications  LoanApplication[]
+  complianceFlags   ComplianceFlag[]
+  deletedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Transaction {
+  id                   String            @id @default(uuid())
+  accountId            String
+  account              Account           @relation("AccountTransactions", fields: [accountId], references: [id])
+  type                 TransactionType
+  status               TransactionStatus @default(COMPLETED)
+  amount               Decimal           @db.Decimal(15, 2)
+  balanceAfter         Decimal           @db.Decimal(15, 2)
+  sourceAccountId      String?
+  sourceAccount        Account?          @relation("TransferSource", fields: [sourceAccountId], references: [id])
+  destinationAccountId String?
+  destinationAccount   Account?          @relation("TransferDestination", fields: [destinationAccountId], references: [id])
+  currency             String            @default("USD")
+  exchangeRate         Decimal?          @db.Decimal(15, 6)
+  description          String?
+  fraudSignals         FraudSignal[]
+  complianceFlags      ComplianceFlag[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([accountId])
+  @@index([createdAt])
+  @@index([accountId, createdAt])
+  @@map("transactions")
+}
+
+model FraudSignal {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  signals       String[]
+  riskScore     Int
+  createdAt     DateTime    @default(now())
+
+  @@index([transactionId])
+  @@map("fraud_signals")
+}
+
+model ComplianceFlag {
+  id            String       @id @default(uuid())
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  accountId     String?
+  account       Account?     @relation(fields: [accountId], references: [id])
+  flagReason    String
+  resolved      Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("compliance_flags")
+}
+
+model KycSubmission {
+  id               String       @id @default(uuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  fullName         String
+  dateOfBirth      DateTime
+  nationalIdNumber String
+  documentType     DocumentType
+  documentImageUrl String
+  status           KycStatus    @default(PENDING_REVIEW)
+  reviewedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([userId])
+  @@map("kyc_submissions")
+}
+
+model LoanApplication {
+  id                    String           @id @default(uuid())
+  userId                String
+  user                  User             @relation(fields: [userId], references: [id])
+  accountId             String
+  account               Account          @relation(fields: [accountId], references: [id])
+  requestedAmount       Decimal          @db.Decimal(15, 2)
+  requestedTermMonths   Int
+  annualIncome          Decimal          @db.Decimal(15, 2)
+  monthlyDebt           Decimal          @db.Decimal(15, 2)
+  creditScore           Int
+  employmentStatus      EmploymentStatus
+  decision              LoanDecision
+  approvedAmount        Decimal?         @db.Decimal(15, 2)
+  apr                   Decimal?         @db.Decimal(6, 4)
+  monthlyPayment        Decimal?         @db.Decimal(15, 2)
+  rejectionCode         String?
+  assessmentRiskLevel   String?
+  assessmentSummary     String?
+  assessmentWatchPoints String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("loan_applications")
+}

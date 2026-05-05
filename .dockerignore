@@ -1,0 +1,10 @@
+node_modules
+dist
+src/generated
+.env
+coverage
+playwright-report
+test-results
+client/node_modules
+client/dist
+*.tsbuildinfo
