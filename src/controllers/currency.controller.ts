@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/validate.middleware';
 import { AccountRepository } from '../repositories/account.repository';
 import { TransactionRepository } from '../repositories/transaction.repository';
 import { calculateConversion } from '../domain/currency/currency.service';
+import { clearCache } from '../domain/currency/rate.cache';
 import { NotFoundError } from '../shared/errors';
 import type { AppDeps } from '../app';
 
@@ -80,5 +81,10 @@ export function makeCurrencyController(deps: AppDeps) {
     });
   });
 
-  return { convert };
+  const invalidateCache = asyncHandler(async (_req: Request, res: Response) => {
+    clearCache();
+    res.status(204).send();
+  });
+
+  return { convert, invalidateCache };
 }

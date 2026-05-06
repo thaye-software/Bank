@@ -3,9 +3,14 @@ import { asyncHandler } from '../middleware/validate.middleware';
 import { KycRepository } from '../repositories/kyc.repository';
 import { AccountRepository } from '../repositories/account.repository';
 import { UserRepository } from '../repositories/user.repository';
-import { validateKycSubmission } from '../domain/kyc/kyc.validator';
+import {
+  validateKycSubmission,
+  canResubmitKyc,
+  getNextKycStatus,
+} from '../domain/kyc/kyc.validator';
 import type { KycSubmissionInput } from '../domain/kyc/kyc.validator';
 import type { DocumentType } from '../domain/accounts/account.types';
+import { BusinessRuleError, ErrorCode } from '../shared/errors';
 import type { AppDeps } from '../app';
 
 export function makeKycController(deps: AppDeps) {
@@ -34,11 +39,18 @@ export function makeKycController(deps: AppDeps) {
       documentImageUrl: body.documentImageUrl,
     };
 
+    if (!canResubmitKyc(user.kycStatus)) {
+      throw new BusinessRuleError(
+        ErrorCode.KYC_RESUBMIT_NOT_ALLOWED,
+        'KYC submission is not allowed in the current status',
+      );
+    }
+
     const validationResult = validateKycSubmission(input, user.kycStatus);
     if (!validationResult.ok) throw validationResult.error;
 
     const { autoApprove } = validationResult.value;
-    const newStatus = autoApprove ? 'VERIFIED' : 'PENDING_REVIEW';
+    const newStatus = getNextKycStatus(user.kycStatus, autoApprove);
 
     const submission = await kycRepo.create(userId, input, newStatus);
 

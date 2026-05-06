@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.middleware';
-import { authenticate } from '../middleware/auth.middleware';
+import { authenticate, authorize } from '../middleware/auth.middleware';
 import { makeCurrencyController } from '../controllers/currency.controller';
 import { SUPPORTED_CURRENCIES } from '../domain/currency/currency.service';
 import type { AppDeps } from '../app';
@@ -26,6 +26,7 @@ export function makeCurrencyRouter(deps: AppDeps): Router {
   const controller = makeCurrencyController(deps);
 
   router.post('/convert', authenticate, validate(convertSchema), controller.convert);
+  router.delete('/cache', authenticate, authorize('ADMIN'), controller.invalidateCache);
 
   return router;
 }

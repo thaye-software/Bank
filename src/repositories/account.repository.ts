@@ -62,4 +62,15 @@ export class AccountRepository {
   async countActiveByUserId(userId: string): Promise<number> {
     return this.db.account.count({ where: { userId, status: 'ACTIVE', deletedAt: null } });
   }
+
+  async findActiveEligibleForInterest(): Promise<Account[]> {
+    const rows = await this.db.account.findMany({
+      where: {
+        status: 'ACTIVE',
+        type: { in: ['SAVINGS', 'BUSINESS'] },
+        deletedAt: null,
+      },
+    });
+    return rows.map(toDomain);
+  }
 }

@@ -85,6 +85,7 @@ export const ErrorCode = {
   EXCHANGE_RATE_UNAVAILABLE: 'EXCHANGE_RATE_UNAVAILABLE',
   // KYC
   KYC_ALREADY_VERIFIED: 'KYC_ALREADY_VERIFIED',
+  KYC_RESUBMIT_NOT_ALLOWED: 'KYC_RESUBMIT_NOT_ALLOWED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
