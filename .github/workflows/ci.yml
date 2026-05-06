@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Static Analysis ────────────────────────────────────────────────────────
+  static:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+  # ── 2. Unit Tests ─────────────────────────────────────────────────────────────
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      # Database URL is required by env.ts validation but not used by pure domain tests
+      DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+      JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
+      ANTHROPIC_API_KEY: dummy-key
+      CURRENCY_API_KEY: dummy-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+  # ── 3. Integration Tests ──────────────────────────────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nordicbank
+          POSTGRES_PASSWORD: nordicbank
+          POSTGRES_DB: nordicbank_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_test
+      TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_test
+      JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
+      # External APIs are mocked with msw in integration tests — real keys not needed
+      ANTHROPIC_API_KEY: dummy-key
+      CURRENCY_API_KEY: dummy-key
+      ENABLE_KYC_AUTO_APPROVE: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Push schema to test database
+        run: npx prisma db push --accept-data-loss
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+  # ── 4. E2E Tests ──────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nordicbank
+          POSTGRES_PASSWORD: nordicbank
+          POSTGRES_DB: nordicbank_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_e2e
+      TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_e2e
+      JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
+      ANTHROPIC_API_KEY: dummy-key
+      CURRENCY_API_KEY: dummy-key
+      ENABLE_KYC_AUTO_APPROVE: "true"
+      PORT: 3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Push schema to e2e database
+        run: npx prisma db push --accept-data-loss
+
+      - name: Start server
+        run: npx tsx src/server.ts &
+
+      - name: Wait for server to be healthy
+        run: timeout 30 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
+
+      - name: Run E2E tests
+        run: npx playwright test --pass-with-no-tests
