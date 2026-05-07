@@ -6,3 +6,5 @@ src/generated/
 coverage/
 playwright-report/
 test-results/
+client/package-lock.json
+.superpowers/
