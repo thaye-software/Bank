@@ -16,11 +16,22 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.spec.ts"],
+      "files": ["**/*.test.ts", "**/*.spec.ts", "tests/**/*.ts"],
+      "parserOptions": {
+        "project": ["./Bank/tsconfig.test.json"]
+      },
       "rules": {
         "vitest/no-disabled-tests": "error",
         "vitest/no-focused-tests": "error",
         "@typescript-eslint/no-floating-promises": "off"
+      }
+    },
+    {
+      "files": ["**/tests/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-call": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off"
       }
     }
   ],

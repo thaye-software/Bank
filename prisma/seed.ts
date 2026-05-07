@@ -3,10 +3,7 @@ import { PrismaClient } from '@db';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 
-const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL'] ?? '' });
-const prisma = new PrismaClient({ adapter });
-
-async function main() {
+export async function seedDatabase(prisma: PrismaClient): Promise<void> {
   const password = await bcrypt.hash('password123', 12);
 
   const customer = await prisma.user.upsert({
@@ -60,6 +57,11 @@ async function main() {
   console.log('Seeded:', { customer: customer.email, staff: staff.email });
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => { void prisma.$disconnect(); });
+// Only runs when executed directly: `tsx prisma/seed.ts` or `prisma db seed`
+if (process.argv[1] && process.argv[1].includes('seed')) {
+  const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL'] ?? '' });
+  const client = new PrismaClient({ adapter });
+  seedDatabase(client)
+    .catch((e) => { console.error(e); process.exit(1); })
+    .finally(() => { void client.$disconnect(); });
+}
