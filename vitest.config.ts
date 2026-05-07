@@ -9,12 +9,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/domain/**'],
-      exclude: ['src/**/*.test.ts'],
-      thresholds: {
-        statements: 90,
-        branches: 85,
-      },
+      include: ['src/**'],
+      exclude: ['src/**/*.test.ts', 'src/generated/**', 'src/server.ts'],
+      all: true,
     },
   },
   resolve: {

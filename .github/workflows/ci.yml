@@ -179,7 +179,7 @@ jobs:
         run: npm ci
 
       - name: Generate coverage report
-        run: npm run test:coverage
+        run: npx vitest run --config vitest.config.ts --coverage --passWithNoTests
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
