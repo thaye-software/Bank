@@ -81,10 +81,10 @@ export function makeCurrencyController(deps: AppDeps) {
     });
   });
 
-  const invalidateCache = asyncHandler(async (_req: Request, res: Response) => {
+  const invalidateCache = (_req: Request, res: Response): void => {
     clearCache();
     res.status(204).send();
-  });
+  };
 
   return { convert, invalidateCache };
 }
