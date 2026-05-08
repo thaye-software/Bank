@@ -27,7 +27,7 @@
 
     "test:unit": "vitest run --config vitest.config.ts",
 
-    "test:integration": "vitest run --config vitest.integration.config.ts && npx playwright test",
+    "test:integration": "vitest run --config vitest.integration.config.ts && npx playwright test --project=api-integration",
 
     "test:api": "playwright test --project=api-integration",
 
