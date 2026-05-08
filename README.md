@@ -2,7 +2,11 @@
 
 A full-stack monolithic banking application built for a Software Quality exam project. The codebase is intentionally rich in business rules — loan approval, fraud detection, interest tiers, KYC, currency conversion — so that every major testing technique can be demonstrated: unit (blackbox + whitebox/decision coverage), mocking rationale, integration (API + DB), negative testing, E2E (Playwright), stress/performance, and static analysis. 
 
-**Stack:** TypeScript · Express · PostgreSQL · Prisma 7 · Vitest · Playwright · Claude API · currencyapi.com
+**Stack:**
+
+- **Backend:** TypeScript · Express · PostgreSQL · Prisma 7 · Claude API · currencyapi.com
+- **Frontend:** React 18 · Vite · React Query · React Hook Form · Tailwind CSS
+- **Testing:** Vitest · Playwright (Chromium / Firefox / WebKit) · SonarCloud
 
 ---
 
@@ -34,20 +38,31 @@ Fill in the remaining values:
 | `ANTHROPIC_API_KEY` | No | Loan AI assessment — endpoint degrades gracefully without it |
 | `CURRENCY_API_KEY` | No | Currency conversion — endpoint degrades gracefully without it |
 
-### Step 3 — Push schema, generate client, seed
+### Step 3 — Install dependencies and prepare the database
 
 ```bash
-npm install
-npx prisma db push       # creates all tables from schema.prisma
-npx prisma generate      # generates the TypeScript client
-npm run db:seed          # inserts Alice + staff user with test accounts
+npm install                  # installs root deps + auto-runs `prisma generate` (postinstall hook)
+cd client && npm install     # installs frontend deps (React, Vite, etc.)
+cd ..
+npx prisma db push           # creates all tables from schema.prisma
+npm run db:seed              # inserts Alice + staff user with test accounts
 ```
 
-### Step 4 — Start the API
+### Step 4 — Start the app
+
+The standard dev workflow runs the Express API and the Vite dev server side by side:
 
 ```bash
-npm run dev:server
-# API available at http://localhost:3000
+npm run dev
+# Backend API: http://localhost:3000
+# Frontend:    http://localhost:5173 (proxies /api → :3000)
+```
+
+Run them individually if needed:
+
+```bash
+npm run dev:server   # backend only — http://localhost:3000
+npm run dev:client   # frontend only — http://localhost:5173
 ```
 
 ### Inspect the database
@@ -242,22 +257,30 @@ npm run lint
 ## Project layout
 
 ```
-src/
-  domain/          # Pure business logic — fully unit-testable, no I/O
-  controllers/     # HTTP handlers — parse, call domain, format response
-  repositories/    # All Prisma DB access
-  middleware/      # Auth, validation, error handling
-  config/          # Env vars (Zod-validated), logger, Anthropic client
-  shared/          # Result<T,E> type, AppError hierarchy
+src/                 # Express backend
+  domain/            # Pure business logic — fully unit-testable, no I/O
+  controllers/       # HTTP handlers — parse, call domain, format response
+  repositories/      # All Prisma DB access
+  middleware/        # Auth, validation, error handling
+  config/            # Env vars (Zod-validated), logger, Anthropic client
+  shared/            # Result<T,E> type, AppError hierarchy
+
+client/              # React + Vite frontend (own package.json, own lockfile)
+  src/
+    pages/           # Route-level components
+    components/      # Shared UI (Tailwind + Radix primitives)
+    api/             # Typed fetch wrappers — one file per backend resource
+    hooks/           # React Query hooks
+  vite.config.ts     # Dev server on :5173, proxies /api → :3000
 
 tests/
-  unit/            # Domain unit tests
-  integration/     # API + DB integration tests (supertest + real Postgres)
-  e2e/             # Playwright browser journeys
-  stress/          # Load tests (autocannon / k6)
-  helpers/         # Factories, DB helpers, test app builder
+  unit/              # Domain unit tests
+  integration/       # API + DB integration tests (supertest + real Postgres)
+  e2e/               # Playwright browser journeys
+  stress/            # Load tests (autocannon / k6)
+  helpers/           # Factories, DB helpers, test app builder
 
 prisma/
-  schema.prisma    # Database schema
-  seed.ts          # Dev fixtures (idempotent)
+  schema.prisma      # Database schema
+  seed.ts            # Dev fixtures (idempotent)
 ```
