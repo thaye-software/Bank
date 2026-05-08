@@ -1,7 +1,7 @@
 import { PrismaClient, Prisma } from '@db';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { env } from '../config/env';
-import { logger } from '../config/logger';
+import { env } from '../src/config/env';
+import { logger } from '../src/config/logger';
 
 const SLOW_QUERY_MS = 100;
 

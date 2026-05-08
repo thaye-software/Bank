@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "main": "dist/server.js",
+  "type": "module",
   "scripts": {
     "dev:server": "tsx watch src/server.ts",
     "dev:client": "cd client && vite",
@@ -20,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts && npx playwright test",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "db:migrate": "prisma migrate dev",
