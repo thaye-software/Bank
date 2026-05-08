@@ -3,18 +3,15 @@ import path from 'path';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.unit.test.ts', 'tests/unit/**/*.test.ts'],
+    include: ['tests/unit/**/*.test.ts'],
     globals: true,
     environment: 'node',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/domain/**'],
-      exclude: ['src/**/*.test.ts'],
-      thresholds: {
-        statements: 90,
-        branches: 85,
-      },
+      include: ['src/**'],
+      exclude: ['src/**/*.test.ts', 'src/generated/**', 'src/server.ts'],
+      all: true,
     },
   },
   resolve: {

@@ -23,7 +23,7 @@ export function makeCurrencyController(deps: AppDeps) {
     const txRepo = new TransactionRepository(deps.db);
 
     const account = await accountRepo.findByIdForUpdate(body.accountId);
-    if (!account || account.userId !== req.user!.userId) {
+    if (account?.userId !== req.user!.userId) {
       throw new NotFoundError('Account', body.accountId);
     }
 
@@ -81,10 +81,10 @@ export function makeCurrencyController(deps: AppDeps) {
     });
   });
 
-  const invalidateCache = asyncHandler(async (_req: Request, res: Response) => {
+  const invalidateCache = (_req: Request, res: Response): void => {
     clearCache();
     res.status(204).send();
-  });
+  };
 
   return { convert, invalidateCache };
 }

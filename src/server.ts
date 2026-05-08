@@ -1,5 +1,5 @@
 import { createApp } from './app';
-import { prisma } from './prisma/client';
+import { prisma } from '../prisma/client';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { startInterestJob } from './jobs/interest.job';

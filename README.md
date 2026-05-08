@@ -1,6 +1,6 @@
 # NordicBank
 
-A full-stack monolithic banking application built for a Software Quality exam project. The codebase is intentionally rich in business rules — loan approval, fraud detection, interest tiers, KYC, currency conversion — so that every major testing technique can be demonstrated: unit (blackbox + whitebox/decision coverage), mocking rationale, integration (API + DB), negative testing, E2E (Playwright), stress/performance, and static analysis.
+A full-stack monolithic banking application built for a Software Quality exam project. The codebase is intentionally rich in business rules — loan approval, fraud detection, interest tiers, KYC, currency conversion — so that every major testing technique can be demonstrated: unit (blackbox + whitebox/decision coverage), mocking rationale, integration (API + DB), negative testing, E2E (Playwright), stress/performance, and static analysis. 
 
 **Stack:** TypeScript · Express · PostgreSQL · Prisma 7 · Vitest · Playwright · Claude API · currencyapi.com
 

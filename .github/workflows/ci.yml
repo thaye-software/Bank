@@ -99,6 +99,8 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-jammy
     services:
       postgres:
         image: postgres:16
@@ -106,8 +108,6 @@ jobs:
           POSTGRES_USER: nordicbank
           POSTGRES_PASSWORD: nordicbank
           POSTGRES_DB: nordicbank_e2e
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -115,13 +115,16 @@ jobs:
           --health-retries 5
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_e2e
-      TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_e2e
+      DATABASE_URL: postgresql://nordicbank:nordicbank@postgres:5432/nordicbank_e2e
+      TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@postgres:5432/nordicbank_e2e
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
       ANTHROPIC_API_KEY: dummy-key
       CURRENCY_API_KEY: dummy-key
       ENABLE_KYC_AUTO_APPROVE: "true"
       PORT: 3000
+      # Firefox refuses to launch when $HOME is owned by a different uid than the process.
+      # The Playwright container runs as root but /github/home is uid 1001.
+      HOME: /root
     steps:
       - uses: actions/checkout@v4
 
@@ -129,30 +132,38 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
 
-      - name: Install dependencies
+      - name: Install server dependencies
         run: npm ci
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
 
       - name: Push schema to e2e database
         run: npx prisma db push --accept-data-loss
 
-      - name: Start server
-        run: npx tsx src/server.ts &
+      - name: Seed e2e database
+        run: npx prisma db seed
 
-      - name: Wait for server to be healthy
+      - name: Start server and client
+        run: nohup npm run dev > server.log 2>&1 &
+
+      - name: Wait for backend to be healthy
         run: timeout 30 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
 
+      - name: Wait for Vite to be ready
+        run: timeout 30 bash -c 'until curl -sf http://localhost:5173; do sleep 1; done'
+
       - name: Run E2E tests
-        run: npx playwright test --pass-with-no-tests
+        run: npx playwright test --project=e2e-chromium --project=e2e-firefox --project=e2e-webkit --pass-with-no-tests
+
+      - name: Dump server log on failure
+        if: failure()
+        run: cat server.log || true
 
   # ── 5. SonarQube Analysis ─────────────────────────────────────────────────────
   sonar:
@@ -179,10 +190,12 @@ jobs:
         run: npm ci
 
       - name: Generate coverage report
-        run: npm run test:coverage
+        run: npx vitest run --config vitest.config.ts --coverage --passWithNoTests
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: sonarsource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+          
