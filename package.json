@@ -12,18 +12,32 @@
     "dev:server": "tsx watch src/server.ts",
     "dev:client": "cd client && vite",
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
+
     "build:server": "tsc --project tsconfig.json",
     "build:client": "cd client && vite build",
     "build": "npm run build:server && npm run build:client",
+  
     "start": "node dist/server.js",
+
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts",
+
+    "test": "vitest run --config vitest.config.ts && playwright test",
+
     "test:unit": "vitest run --config vitest.config.ts",
+
     "test:integration": "vitest run --config vitest.integration.config.ts && npx playwright test",
-    "test:e2e": "playwright test",
+
+    "test:api": "playwright test --project=api-integration",
+
+    "test:e2e": "playwright test --project=e2e-chromium --project=e2e-firefox --project=e2e-webkit",
+    "test:e2e:headed": "playwright test --project=e2e-chromium --headed",
+    "test:e2e:ui": "playwright test --project=e2e-chromium --ui",
+    "test:e2e:debug": "playwright test --project=e2e-chromium --debug",
+
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
+
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",

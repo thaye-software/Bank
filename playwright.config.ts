@@ -1,10 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
-  workers: 1,
+  workers: undefined,
   reporter: process.env['CI'] ? [['github'], ['list']] : 'list',
   use: {
     baseURL: process.env['TEST_BASE_URL'] ?? 'http://localhost:5173',
@@ -21,8 +21,20 @@ export default defineConfig({
     {
       name: 'e2e-chromium',
       testDir: './tests/e2e',
-      testMatch: '**/*.e2e.test.ts',
+      testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'e2e-firefox',
+      testDir: './tests/e2e',
+      testMatch: '**/*.test.ts',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'e2e-webkit',
+      testDir: './tests/e2e',
+      testMatch: '**/*.test.ts',
+      use: { ...devices['Desktop Safari'] },
     },
   ],
 });
