@@ -140,10 +140,13 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps
 
       - name: Push schema to e2e database
         run: npx prisma db push --accept-data-loss
+
+      - name: Seed e2e database
+        run: npx prisma db seed
 
       - name: Start server
         run: nohup npx tsx src/server.ts > server.log 2>&1 &
