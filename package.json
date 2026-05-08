@@ -8,6 +8,7 @@
   },
   "main": "dist/server.js",
   "type": "module",
+  "postinstall": "prisma generate",
   "scripts": {
     "dev:server": "tsx watch src/server.ts",
     "dev:client": "cd client && vite",
