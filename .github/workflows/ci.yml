@@ -146,7 +146,7 @@ jobs:
         run: npx prisma db push --accept-data-loss
 
       - name: Start server
-        run: npx tsx src/server.ts &
+        run: npx tsx src/server.ts
 
       - name: Wait for server to be healthy
         run: timeout 30 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
