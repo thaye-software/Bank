@@ -146,13 +146,17 @@ jobs:
         run: npx prisma db push --accept-data-loss
 
       - name: Start server
-        run: npx tsx src/server.ts
+        run: nohup npx tsx src/server.ts > server.log 2>&1 &
 
       - name: Wait for server to be healthy
         run: timeout 30 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
 
       - name: Run E2E tests
         run: npx playwright test --pass-with-no-tests
+
+      - name: Dump server log on failure
+        if: failure()
+        run: cat server.log || true
 
   # ── 5. SonarQube Analysis ─────────────────────────────────────────────────────
   sonar:
