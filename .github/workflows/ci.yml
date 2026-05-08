@@ -122,6 +122,9 @@ jobs:
       CURRENCY_API_KEY: dummy-key
       ENABLE_KYC_AUTO_APPROVE: "true"
       PORT: 3000
+      # Firefox refuses to launch when $HOME is owned by a different uid than the process.
+      # The Playwright container runs as root but /github/home is uid 1001.
+      HOME: /root
     steps:
       - uses: actions/checkout@v4
 
