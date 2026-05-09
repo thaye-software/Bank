@@ -6,14 +6,37 @@ scope: "**/*.test.ts, **/*.spec.ts"
 
 ---
 
-## 1. File Naming
+## 1. File Naming and Location
 
-| Test type | File pattern |
-|---|---|
-| Unit | `src/domain/<module>/<subject>.unit.test.ts` |
-| Integration (API + DB) | `tests/integration/<subject>.integration.test.ts` |
-| E2E | `tests/e2e/<journey>.e2e.test.ts` |
-| Stress | `tests/stress/<subject>.stress.ts` |
+All tests live under the top-level `tests/` directory, mirrored by domain area. Source files in `src/` and `client/src/` never contain test files alongside them.
+
+| Test type | Location | File pattern |
+|---|---|---|
+| Unit | `tests/unit/<module>/` | `<subject>.unit.test.ts` |
+| Integration — API | `tests/integration/api/` | `<subject>.api.test.ts` |
+| Integration — Database | `tests/integration/database/` | `<subject>.db.test.ts` |
+| E2E | `tests/e2e/<journey>/` | `<journey>.e2e.test.ts` |
+| Stress | `tests/stress/<subject>/` | `<subject>.stress.ts` |
+| Helpers / fixtures | `tests/helpers/` (and `tests/helpers/setup/`) | `*.ts` (no `.test` suffix) |
+
+Concrete examples currently in the repo:
+
+```
+tests/unit/account/account.rules.unit.test.ts
+tests/unit/interest/interest.calculator.unit.test.ts
+tests/unit/kyc/kyc.validator.unit.test.ts
+tests/unit/transaction/transaction.validator.unit.test.ts
+tests/integration/api/auth.api.test.ts
+tests/integration/database/account.db.test.ts
+tests/e2e/login/login.e2e.test.ts
+tests/helpers/factories.ts
+tests/helpers/server.helpers.ts
+tests/helpers/setup/test.containers.ts
+```
+
+- One folder per `<module>` / `<subject>` / `<journey>` — even when only one test file lives there today, so adding sibling tests later does not require a restructure.
+- The `<subject>` in the filename matches the source file under test (e.g. `account.rules.ts` → `account.rules.unit.test.ts`).
+- E2E folders are named after the user journey, not a single page (`login/`, `account-lifecycle/`, `loan-application/`).
 
 - One top-level `describe` per function or class under test.
 - Inner `describe` blocks for logical sub-scenarios: `describe('when account is FROZEN', ...)`.
@@ -214,11 +237,13 @@ it('should return 422 and not create a transaction when balance falls below mini
 ## 9. E2E Tests (Playwright)
 
 - Use Playwright's `request` context (API-level journeys, not browser UI)
-- Each file covers one complete user journey:
-  - `account-lifecycle.e2e.ts`: register → KYC → open account → deposit → withdraw
-  - `loan-application.e2e.ts`: apply → approved → repayment schedule
-  - `currency-conversion.e2e.ts`: deposit USD → convert to EUR → verify balances and fee
-  - `fraud-block.e2e.ts`: simulate rapid transactions → assert `FRAUD_BLOCKED`
+- Each journey lives in its own folder under `tests/e2e/<journey>/` and contains a single `<journey>.e2e.test.ts` file. Folder-per-journey leaves room for journey-specific fixtures or helpers without polluting the top level.
+- Existing and planned journeys:
+  - `tests/e2e/login/login.e2e.test.ts`
+  - `tests/e2e/account-lifecycle/account-lifecycle.e2e.test.ts`: register → KYC → open account → deposit → withdraw
+  - `tests/e2e/loan-application/loan-application.e2e.test.ts`: apply → approved → repayment schedule
+  - `tests/e2e/currency-conversion/currency-conversion.e2e.test.ts`: deposit USD → convert to EUR → verify balances and fee
+  - `tests/e2e/fraud-block/fraud-block.e2e.test.ts`: simulate rapid transactions → assert `FRAUD_BLOCKED`
 - E2E tests run against a dedicated test server (`TEST_PORT`) with a seeded database
 - Use Playwright's `expect` for assertions — do not mix with Vitest's `expect`
 
