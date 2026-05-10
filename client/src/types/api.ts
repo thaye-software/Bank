@@ -6,6 +6,7 @@ export type EmploymentStatus = 'EMPLOYED' | 'SELF_EMPLOYED' | 'UNEMPLOYED' | 'RE
 export type KycStatus = 'NOT_STARTED' | 'PENDING_REVIEW' | 'VERIFIED' | 'REJECTED';
 export type DocumentType = 'PASSPORT' | 'NATIONAL_ID' | 'DRIVERS_LICENSE';
 export type LoanDecision = 'APPROVED' | 'REJECTED';
+export type Role = 'CUSTOMER' | 'STAFF' | 'ADMIN';
 
 export interface Account {
   id: string;
@@ -53,7 +54,7 @@ export interface ConversionResult {
   originalAmount: number;
   fee: number;
   convertedAmount: number;
-  rate: number;
+  exchangeRate: number;
   stale?: boolean;
 }
 
@@ -63,5 +64,26 @@ export interface AuthResult {
     id: string;
     email: string;
     fullName: string;
+    role: Role;
   };
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  fullName: string;
+  role: Role;
+  kycStatus: KycStatus;
+}
+
+export interface LoanApplicationRecord {
+  id: string;
+  accountId: string;
+  decision: LoanDecision;
+  approvedAmount?: number;
+  apr?: number;
+  monthlyPayment?: number;
+  rejectionCode?: string;
+  assessment?: LoanAssessment;
+  createdAt: string;
 }

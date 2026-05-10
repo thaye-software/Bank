@@ -157,7 +157,7 @@ export function LoanApplication() {
                 <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div><p className="text-muted-foreground">Approved amount</p><p className="font-semibold">${data.approvedAmount?.toFixed(2)}</p></div>
-                    <div><p className="text-muted-foreground">APR</p><p className="font-semibold">{data.apr?.toFixed(2)}%</p></div>
+                    <div><p className="text-muted-foreground">APR</p><p className="font-semibold">{((data.apr ?? 0) * 100).toFixed(2)}%</p></div>
                     <div><p className="text-muted-foreground">Term</p><p className="font-semibold">{data.termMonths} months</p></div>
                     <div><p className="text-muted-foreground">Monthly payment</p><p className="font-semibold">${data.monthlyPayment?.toFixed(2)}</p></div>
                   </div>

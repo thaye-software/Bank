@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.middleware';
+import { authenticate } from '../middleware/auth.middleware';
 import { makeAuthController } from '../controllers/auth.controller';
 import type { AppDeps } from '../app';
 
@@ -25,6 +26,7 @@ export function makeAuthRouter(deps: AppDeps): Router {
 
   router.post('/register', validate(registerSchema), controller.register);
   router.post('/login', validate(loginSchema), controller.login);
+  router.get('/me', authenticate, controller.me);
 
   return router;
 }
