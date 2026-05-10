@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { convertCurrency } from '@/api/currency.api';
+import { clearCurrencyCache, convertCurrency } from '@/api/currency.api';
 import type { Currency } from '@/api/currency.api';
 
 export function useConvertCurrency() {
@@ -19,5 +19,11 @@ export function useConvertCurrency() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
+  });
+}
+
+export function useClearCurrencyCache() {
+  return useMutation({
+    mutationFn: clearCurrencyCache,
   });
 }

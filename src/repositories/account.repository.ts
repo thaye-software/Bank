@@ -36,7 +36,7 @@ export class AccountRepository {
     return rows.map(toDomain);
   }
 
-  async create(data: { userId: string; type: AccountType }): Promise<Account> {
+  async create(data: { userId: string; type: AccountType; status?: AccountStatus }): Promise<Account> {
     const row = await this.db.account.create({ data });
     return toDomain(row);
   }

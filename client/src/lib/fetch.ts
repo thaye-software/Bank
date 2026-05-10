@@ -27,6 +27,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError('UNAUTHORIZED', 'Session expired', 401);
   }
 
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   const body = (await res.json()) as { success: boolean; data?: T; error?: { code: string; message: string } };
 
   if (!body.success || !res.ok) {

@@ -1,5 +1,5 @@
 import { apiFetch } from '@/lib/fetch';
-import type { LoanResult, EmploymentStatus } from '@/types/api';
+import type { LoanResult, LoanApplicationRecord, EmploymentStatus } from '@/types/api';
 
 export interface LoanApplicationPayload {
   accountId: string;
@@ -19,6 +19,6 @@ export async function applyForLoan(payload: LoanApplicationPayload): Promise<Loa
   });
 }
 
-export async function listLoans(): Promise<LoanResult[]> {
-  return apiFetch<LoanResult[]>('/api/v1/loans');
+export async function listLoans(): Promise<LoanApplicationRecord[]> {
+  return apiFetch<LoanApplicationRecord[]>('/api/v1/loans');
 }

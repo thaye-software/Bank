@@ -15,6 +15,8 @@ export function useSubmitKyc() {
     mutationFn: (payload: KycSubmissionPayload) => submitKyc(payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['kyc'] });
+      void queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      void queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 }

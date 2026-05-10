@@ -15,7 +15,10 @@ import { Withdraw } from './pages/transactions/Withdraw';
 import { Transfer } from './pages/transactions/Transfer';
 import { History } from './pages/transactions/History';
 import { LoanApplication } from './pages/LoanApplication';
+import { LoansHistory } from './pages/LoansHistory';
 import { CurrencyConvert } from './pages/CurrencyConvert';
+import { Profile } from './pages/Profile';
+import { CurrencyCache } from './pages/admin/CurrencyCache';
 
 const queryClient = new QueryClient();
 
@@ -33,7 +36,10 @@ const router = createBrowserRouter([
       { path: '/transactions/transfer', element: <Transfer /> },
       { path: '/transactions/history', element: <History /> },
       { path: '/loans', element: <LoanApplication /> },
+      { path: '/loans/history', element: <LoansHistory /> },
       { path: '/currency', element: <CurrencyConvert /> },
+      { path: '/profile', element: <Profile /> },
+      { path: '/admin/currency-cache', element: <CurrencyCache /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
