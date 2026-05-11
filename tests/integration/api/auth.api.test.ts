@@ -101,3 +101,32 @@ test('POST /api/v1/auth/login - should return 200 with a JWT token when given va
   expect(typeof body.data.token).toBe('string');
   expect(body.data.user.email).toBe(credentials.email);
 });
+
+test('GET /api/v1/auth/me - should return 200 with user data when given a valid JWT token', async () => {
+  // Arrange
+  const credentials = {
+    email: faker.internet.email(),
+    password: 'SecurePass1',
+    fullName: faker.person.fullName(),
+  };
+  const registerResponse = await apiContext.post('/api/v1/auth/register', { data: credentials });
+  const { token } = (await registerResponse.json() as { success: boolean; data: { token: string } }).data;
+
+  // Act
+  const response = await apiContext.get('/api/v1/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // Assert
+  expect(response.status()).toBe(200);
+  const body = await response.json() as {
+    success: boolean;
+    data: { id: string; email: string; fullName: string; role: string; kycStatus: string };
+  };
+  expect(body.success).toBe(true);
+  expect(body.data.email).toBe(credentials.email);
+  expect(body.data.fullName).toBe(credentials.fullName);
+  expect(typeof body.data.id).toBe('string');
+  expect(typeof body.data.role).toBe('string');
+  expect(typeof body.data.kycStatus).toBe('string');
+});
