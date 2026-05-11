@@ -53,7 +53,7 @@ export function CurrencyConvert() {
                 <AlertDescription>
                   <div className="space-y-1 text-sm">
                     <p>Converted <strong>{data.originalAmount} {data.fromCurrency}</strong> → <strong>{data.convertedAmount.toFixed(4)} {data.toCurrency}</strong></p>
-                    <p className="text-muted-foreground">Rate: {data.rate} · Fee: ${data.fee.toFixed(2)}</p>
+                    <p className="text-muted-foreground">Rate: {data.exchangeRate} · Fee: ${data.fee.toFixed(2)}</p>
                     {data.stale === true && <p className="text-yellow-500">Using cached exchange rate</p>}
                   </div>
                 </AlertDescription>

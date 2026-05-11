@@ -17,7 +17,13 @@ export function makeAuthController(deps: AppDeps) {
     const user = await userRepo.create({ email, password: hashed, fullName });
     const token = signToken({ userId: user.id, email: user.email, role: user.role });
 
-    res.status(201).json({ success: true, data: { token, user: { id: user.id, email: user.email, fullName: user.fullName } } });
+    res.status(201).json({
+      success: true,
+      data: {
+        token,
+        user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+      },
+    });
   });
 
   const login = asyncHandler(async (req: Request, res: Response, _next: NextFunction) => {
@@ -31,8 +37,31 @@ export function makeAuthController(deps: AppDeps) {
     if (!valid) throw new BusinessRuleError('INVALID_CREDENTIALS', 'Invalid email or password', undefined);
 
     const token = signToken({ userId: user.id, email: user.email, role: user.role });
-    res.json({ success: true, data: { token, user: { id: user.id, email: user.email, fullName: user.fullName } } });
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+      },
+    });
   });
 
-  return { register, login };
+  const me = asyncHandler(async (req: Request, res: Response, _next: NextFunction) => {
+    const userRepo = new (await import('../repositories/user.repository')).UserRepository(deps.db);
+    const user = await userRepo.findById(req.user!.userId);
+    if (!user) throw new NotFoundError('User', req.user!.userId);
+
+    res.json({
+      success: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        kycStatus: user.kycStatus,
+      },
+    });
+  });
+
+  return { register, login, me };
 }

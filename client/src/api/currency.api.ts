@@ -15,3 +15,7 @@ export async function convertCurrency(
     body: JSON.stringify({ accountId, fromCurrency, toCurrency, amount }),
   });
 }
+
+export async function clearCurrencyCache(): Promise<void> {
+  await apiFetch<void>('/api/v1/currency/cache', { method: 'DELETE' });
+}
