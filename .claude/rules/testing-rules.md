@@ -47,19 +47,32 @@ tests/helpers/setup/test.containers.ts
 
 ## 2. Test Structure — Arrange / Act / Assert
 
-Every test body uses AAA with blank lines separating sections:
+Every test body follows the AAA structure (Arrange → Act → Assert), but **does not label the sections**. Use a single blank line to separate Arrange from Act, and a single blank line to separate Act from Assert. The blank-line spacing is the sole structural cue — `// Arrange`, `// Act`, `// Assert` prefix comments are noise and must not be used.
 
 ```typescript
 it('should return APPROVED when all conditions are met', () => {
-  // Arrange
   const application = buildLoanApplication({ creditScore: 750, annualIncome: 80_000 });
 
-  // Act
   const result = evaluateLoanApplication(application);
 
-  // Assert
   expect(result.ok).toBe(true);
   expect(result.value.decision).toBe('APPROVED');
+});
+```
+
+If a piece of Arrange (or any section) needs a reason to exist — e.g. an unusual setup, a fixture that encodes a domain rule — add a short comment explaining *why*, not a label restating *what phase* it is:
+
+```typescript
+it('should exclude debits stamped before the since cutoff', async () => {
+  // one debit just now, one stamped 10 minutes ago — the older one must
+  // not be counted when the window is 5 minutes.
+  await txRepo.create({ … });
+  const stale = await txRepo.create({ … });
+  await prisma.transaction.update({ where: { id: stale.id }, data: { createdAt: tenMinAgo } });
+
+  const count = await txRepo.countDebitsInWindow(accountId, fiveMinutesAgo);
+
+  expect(count).toBe(1);
 });
 ```
 
@@ -135,14 +148,14 @@ describe('Valid partition: $0.01 .. $10,000.00', () => {
     ['BV $9,999.99 (just below upper boundary)',  new Decimal('9999.99')],
     ['BV $10,000.00 (upper boundary)',            new Decimal('10000')],
   ])('%s → ok', (_label, amount) => {
-    // Arrange / Act
     const result = validateWithdrawalAmount(amount);
 
-    // Assert
     expect(result.ok).toBe(true);
   });
 });
 ```
+
+(When Arrange and Act collapse into a single line, drop the leading blank line — there is no separation to mark.)
 
 **When NOT to parametrise:**
 - Tests with different setup, different mocks, or asserting on different fields → keep them as separate `it` blocks.
@@ -283,6 +296,55 @@ export async function truncateAll(prisma: PrismaClient) {
 
 - Never rely on row ordering in assertions — always use `orderBy` explicitly when order matters
 - `afterAll`: disconnect the Prisma client
+
+### Bi-directional traceability
+
+A DB integration test pins specific DB calls inside a specific production file (a controller, a service, a job). The file must be navigable in both directions:
+
+- **Forward** (controller → test): a developer reading the controller can find the test section pinning a given line.
+- **Backward** (test → controller): a developer reading the test can find the controller line each section verifies.
+
+Required at the top of every `*.db.test.ts` file:
+
+1. **Subject line** naming the production file and line range under test.
+2. **Traceability matrix** mapping each test section to the controller line(s) and the DB call exercised.
+
+Required on every section's describe block:
+
+3. **Repeated trace block** listing the controller line(s) the section covers, plus a one-sentence "Verifies:" line.
+
+Example header (taken from `withdrawals.db.test.ts`):
+
+```typescript
+// Subject under test:
+//   src/controllers/transactions.controller.ts → withdraw  (L43–L113)
+//
+// ── Bi-directional traceability matrix ─────────────────────────────────────
+//
+//   Section │ Controller line(s) │ DB call (in production code)
+//   ────────┼────────────────────┼──────────────────────────────────────────
+//   §1      │ L89, L100, L103    │ txRepo.create({ type: 'WITHDRAWAL'|'FEE' })
+//   §2      │ L65                │ txRepo.sumDebitsInWindow(accountId, since24h)
+//   §3      │ L75, L76           │ txRepo.countDebitsInWindow(accountId, …)
+//   §4      │ L98–L106           │ deps.db.$transaction(async () => { … })
+//   §5      │ L54                │ accountRepo.findByIdForUpdate(accountId)
+```
+
+Example per-section block:
+
+```typescript
+// ==========================================================================
+// §2. TransactionRepository.sumDebitsInWindow — rolling-24h aggregate
+//
+// Traces controller lines:
+//   L65 — const dailySum = await txRepo.sumDebitsInWindow(accountId, since24h);
+// Verifies: the aggregate feeds checkDailyLimit(...) with a correct sum —
+// scoped to the account, only inside the window, and only counting
+// COMPLETED + REVIEW_FLAGGED debit-direction rows.
+// ==========================================================================
+```
+
+When the controller is refactored and line numbers shift, update the matrix and the per-section trace blocks in the same commit. Stale line numbers defeat the convention.
 
 ---
 
