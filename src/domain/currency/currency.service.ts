@@ -11,8 +11,8 @@ export const SUPPORTED_CURRENCIES = new Set([
 ]);
 
 const MIN_CONVERSION_USD = new Decimal('1');
-const MAX_SINGLE_CONVERSION_USD = new Decimal('50000');
-const MAX_DAILY_CONVERSION_USD = new Decimal('25000');
+const MAX_SINGLE_CONVERSION_USD = new Decimal('25000');
+const MAX_DAILY_CONVERSION_USD = new Decimal('50000');
 const MIN_FEE = new Decimal('0.50');
 
 interface FeeTier {
