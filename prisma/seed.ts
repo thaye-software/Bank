@@ -6,63 +6,78 @@ import bcrypt from 'bcryptjs';
 export async function seedDatabase(prisma: PrismaClient): Promise<void> {
   const password = await bcrypt.hash('password123', 12);
 
-
   const users: User[] = [];
   const accounts: Account[] = [];
 
+  const staffSeed = {
+    email: 'staff@nordicbank.com',
+    password,
+    fullName: 'NordicBank Staff',
+    role: 'STAFF' as const,
+    kycStatus: 'VERIFIED' as const,
+  };
   const staff = await prisma.user.upsert({
-    where: { email: 'staff@nordicbank.com' },
-    update: {},
-    create: {
-      email: 'staff@nordicbank.com',
-      password,
-      fullName: 'NordicBank Staff',
-      role: 'STAFF',
-      kycStatus: 'VERIFIED',
-    },
+    where: { email: staffSeed.email },
+    update: staffSeed,
+    create: staffSeed,
   });
   users.push(staff);
 
+  const customerSeed = {
+    email: 'alice@example.com',
+    password,
+    fullName: 'Alice Andersen',
+    role: 'CUSTOMER' as const,
+    kycStatus: 'VERIFIED' as const,
+  };
   const customer = await prisma.user.upsert({
-    where: { email: 'alice@example.com' },
-    update: {},
-    create: {
-      email: 'alice@example.com',
-      password,
-      fullName: 'Alice Andersen',
-      role: 'CUSTOMER',
-      kycStatus: 'VERIFIED',
-    },
+    where: { email: customerSeed.email },
+    update: customerSeed,
+    create: customerSeed,
   });
   users.push(customer);
 
+  const checkingSeed = {
+    id: '11111111-1111-1111-1111-111111111111',
+    userId: customer.id,
+    type: 'CHECKING' as const,
+    status: 'ACTIVE' as const,
+    balance: 5000,
+  };
   const checkingAccount = await prisma.account.upsert({
-    where: { id: '11111111-1111-1111-1111-111111111111' },
-    update: {},
-    create: {
-      id: '11111111-1111-1111-1111-111111111111',
-      userId: customer.id,
-      type: 'CHECKING',
-      status: 'ACTIVE',
-      balance: 5000,
-    },
+    where: { id: checkingSeed.id },
+    update: checkingSeed,
+    create: checkingSeed,
   });
   accounts.push(checkingAccount);
 
+  const savingsSeed = {
+    id: '22222222-2222-2222-2222-222222222222',
+    userId: customer.id,
+    type: 'SAVINGS' as const,
+    status: 'ACTIVE' as const,
+    balance: 10000,
+  };
   const savingsAccount = await prisma.account.upsert({
-    where: { id: '22222222-2222-2222-2222-222222222222' },
-    update: {},
-    create: {
-      id: '22222222-2222-2222-2222-222222222222',
-      userId: customer.id,
-      type: 'SAVINGS',
-      status: 'ACTIVE',
-      balance: 10000,
-    },
+    where: { id: savingsSeed.id },
+    update: savingsSeed,
+    create: savingsSeed,
   });
   accounts.push(savingsAccount);
 
-  
+  const businessSeed = {
+    id: '33333333-3333-3333-3333-333333333333',
+    userId: customer.id,
+    type: 'BUSINESS' as const,
+    status: 'ACTIVE' as const,
+    balance: 25000,
+  };
+  const businessAccount = await prisma.account.upsert({
+    where: { id: businessSeed.id },
+    update: businessSeed,
+    create: businessSeed,
+  });
+  accounts.push(businessAccount);
 
   console.log('Seeded:\nUsers:', users.length, '\nAccounts:', accounts.length);
 }

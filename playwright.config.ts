@@ -19,22 +19,30 @@ export default defineConfig({
       testMatch: '**/*.test.ts',
     },
     {
+      name: 'e2e-setup',
+      testDir: './tests/e2e/setup',
+      testMatch: '**/*.setup.ts',
+    },
+    {
       name: 'e2e-chromium',
       testDir: './tests/e2e',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['e2e-setup'],
     },
     {
       name: 'e2e-firefox',
       testDir: './tests/e2e',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Firefox'] },
+      dependencies: ['e2e-setup'],
     },
     {
       name: 'e2e-webkit',
       testDir: './tests/e2e',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Safari'] },
+      dependencies: ['e2e-setup'],
     },
   ],
 });
