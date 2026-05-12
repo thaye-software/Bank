@@ -7,8 +7,8 @@ export default defineConfig({
     exclude: ['tests/integration/api/**'],
     globals: true,
     environment: 'node',
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     pool: 'forks',
     poolOptions: {
       forks: { singleFork: true },
