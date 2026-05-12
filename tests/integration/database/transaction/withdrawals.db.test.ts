@@ -137,8 +137,8 @@ describe('Withdrawal — Database Integration Tests', () => {
       expect(row?.accountId).toBe(checkingAccountId);
       expect(row?.type).toBe('WITHDRAWAL');
       expect(row?.status).toBe('COMPLETED');
-      expect(row?.amount.toString()).toBe('250.00');
-      expect(row?.balanceAfter.toString()).toBe('4750.00');
+      expect(row?.amount.toFixed(2)).toBe('250.00');
+      expect(row?.balanceAfter.toFixed(2)).toBe('4750.00');
       expect(row?.description).toBe('ATM withdrawal');
     });
 
