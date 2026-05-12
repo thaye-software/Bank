@@ -19,10 +19,11 @@ export default defineConfig({
       reportsDirectory: './coverage/integration',
       include: ['src/**'],
       exclude: ['src/**/*.test.ts', 'src/generated/**', 'src/server.ts'],
-      thresholds: {
-        statements: 80,
-        branches: 75,
-      },
+      // No per-suite thresholds — SonarQube Quality Gate is the single source
+      // of truth for coverage enforcement, checked against the merged LCOV
+      // (unit + integration + playwright-api + playwright-e2e). A per-suite
+      // global threshold here would mis-fail because DB integration tests
+      // only exercise src/repositories/**, not the entire src/** tree.
     },
   },
   resolve: {
