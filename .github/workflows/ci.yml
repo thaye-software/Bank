@@ -101,9 +101,11 @@ jobs:
         run: npx prisma db push --accept-data-loss
 
       - name: Run DB integration tests with coverage
+        if: always()
         run: npm run test:integration:db:coverage
 
       - name: Run API integration tests with coverage
+        if: always()
         run: npm run test:api:coverage
 
       - name: Upload DB integration coverage
