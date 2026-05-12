@@ -3,7 +3,7 @@ import path from 'path';
 
 export default defineConfig({
   test: {
-    include: ['tests/integration/database/*.test.ts'],
+    include: ['tests/integration/database/**/*.test.ts'],
     exclude: ['tests/integration/api/**'],
     globals: true,
     environment: 'node',
