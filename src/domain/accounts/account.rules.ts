@@ -107,6 +107,14 @@ export function checkDailyLimit(
   requestedAmount: Decimal,
   limit: Decimal,
 ): Result<void> {
+  if (requestedAmount.lessThanOrEqualTo(new Decimal('0'))) {
+    return err(
+      new BusinessRuleError(
+        ErrorCode.AMOUNT_TOO_LOW,
+        `Requested amount must not be negative or zero`,
+      ),
+    );
+  }
   if (rollingSum.plus(requestedAmount).greaterThan(limit)) {
     return err(
       new BusinessRuleError(

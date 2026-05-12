@@ -18,7 +18,7 @@
     {
       "files": ["**/*.test.ts", "**/*.spec.ts", "tests/**/*.ts"],
       "parserOptions": {
-        "project": ["./Bank/tsconfig.test.json"]
+        "project": ["./tsconfig.test.json"]
       },
       "rules": {
         "vitest/no-disabled-tests": "error",

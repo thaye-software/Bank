@@ -71,13 +71,13 @@ async function createAccount(token: string, type: string) {
 // ---------------------------------------------------------------------------
 
 test('POST /api/v1/accounts - should return 201 and PENDING_KYC account when user KYC is not verified', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await createAccount(token, 'CHECKING');
 
-  // Assert
+  
   expect(response.status()).toBe(201);
   const body = await response.json() as {
     success: boolean;
@@ -90,13 +90,13 @@ test('POST /api/v1/accounts - should return 201 and PENDING_KYC account when use
 });
 
 test('POST /api/v1/accounts - should return 201 with SAVINGS account', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await createAccount(token, 'SAVINGS');
 
-  // Assert
+  
   expect(response.status()).toBe(201);
   const body = await response.json() as { success: boolean; data: { type: string } };
   expect(body.success).toBe(true);
@@ -104,13 +104,13 @@ test('POST /api/v1/accounts - should return 201 with SAVINGS account', async () 
 });
 
 test('POST /api/v1/accounts - should return 201 with BUSINESS account', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await createAccount(token, 'BUSINESS');
 
-  // Assert
+  
   expect(response.status()).toBe(201);
   const body = await response.json() as { success: boolean; data: { type: string } };
   expect(body.success).toBe(true);
@@ -118,14 +118,14 @@ test('POST /api/v1/accounts - should return 201 with BUSINESS account', async ()
 });
 
 test('POST /api/v1/accounts - should return 201 with ACTIVE status when user KYC is VERIFIED', async () => {
-  // Arrange
+  
   const { token, userId } = await registerUser();
   await prisma.user.update({ where: { id: userId }, data: { kycStatus: 'VERIFIED' } });
 
-  // Act
+  
   const response = await createAccount(token, 'CHECKING');
 
-  // Assert
+  
   expect(response.status()).toBe(201);
   const body = await response.json() as { success: boolean; data: { status: string } };
   expect(body.success).toBe(true);
@@ -133,50 +133,50 @@ test('POST /api/v1/accounts - should return 201 with ACTIVE status when user KYC
 });
 
 test('POST /api/v1/accounts - should return 401 when no auth token is provided', async () => {
-  // Act
+  
   const response = await apiContext.post('/api/v1/accounts', { data: { type: 'CHECKING' } });
 
-  // Assert
+  
   expect(response.status()).toBe(401);
 });
 
 test('POST /api/v1/accounts - should return 400 when account type is invalid', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await apiContext.post('/api/v1/accounts', {
     data: { type: 'INVALID_TYPE' },
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(400);
 });
 
 test('POST /api/v1/accounts - should return 400 when type field is missing', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await apiContext.post('/api/v1/accounts', {
     data: {},
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(400);
 });
 
 test('POST /api/v1/accounts - should persist the account in the database', async () => {
-  // Arrange
+  
   const { token, userId } = await registerUser();
 
-  // Act
+  
   const response = await createAccount(token, 'SAVINGS');
   const body = await response.json() as { success: boolean; data: { id: string } };
 
-  // Assert
+  
   const row = await prisma.account.findUnique({ where: { id: body.data.id } });
   expect(row).not.toBeNull();
   expect(row?.userId).toBe(userId);
@@ -188,15 +188,15 @@ test('POST /api/v1/accounts - should persist the account in the database', async
 // ---------------------------------------------------------------------------
 
 test('GET /api/v1/accounts - should return 200 with empty array when user has no accounts', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
 
-  // Act
+  
   const response = await apiContext.get('/api/v1/accounts', {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(200);
   const body = await response.json() as { success: boolean; data: unknown[] };
   expect(body.success).toBe(true);
@@ -205,17 +205,17 @@ test('GET /api/v1/accounts - should return 200 with empty array when user has no
 });
 
 test('GET /api/v1/accounts - should return 200 with all accounts belonging to the user', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
   await createAccount(token, 'CHECKING');
   await createAccount(token, 'SAVINGS');
 
-  // Act
+  
   const response = await apiContext.get('/api/v1/accounts', {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(200);
   const body = await response.json() as { success: boolean; data: unknown[] };
   expect(body.success).toBe(true);
@@ -223,18 +223,18 @@ test('GET /api/v1/accounts - should return 200 with all accounts belonging to th
 });
 
 test('GET /api/v1/accounts - should return 200 with only the requesting user\'s accounts', async () => {
-  // Arrange — two separate users each create an account
+  // - two separate users each create an account
   const userA = await registerUser();
   const userB = await registerUser();
   await createAccount(userA.token, 'CHECKING');
   await createAccount(userB.token, 'SAVINGS');
 
-  // Act — userA lists their accounts
+   // — userA lists their accounts
   const response = await apiContext.get('/api/v1/accounts', {
     headers: { Authorization: `Bearer ${userA.token}` },
   });
 
-  // Assert — only userA's account is returned
+   // — only userA's account is returned
   expect(response.status()).toBe(200);
   const body = await response.json() as {
     success: boolean;
@@ -245,10 +245,10 @@ test('GET /api/v1/accounts - should return 200 with only the requesting user\'s 
 });
 
 test('GET /api/v1/accounts - should return 401 when no auth token is provided', async () => {
-  // Act
+  
   const response = await apiContext.get('/api/v1/accounts');
 
-  // Assert
+  
   expect(response.status()).toBe(401);
 });
 
@@ -257,17 +257,17 @@ test('GET /api/v1/accounts - should return 401 when no auth token is provided', 
 // ---------------------------------------------------------------------------
 
 test('GET /api/v1/accounts/:id - should return 200 with the account when it belongs to the user', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
   const createRes = await createAccount(token, 'CHECKING');
   const { data: account } = await createRes.json() as { data: { id: string; type: string } };
 
-  // Act
+  
   const response = await apiContext.get(`/api/v1/accounts/${account.id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(200);
   const body = await response.json() as { success: boolean; data: { id: string; type: string } };
   expect(body.success).toBe(true);
@@ -276,48 +276,48 @@ test('GET /api/v1/accounts/:id - should return 200 with the account when it belo
 });
 
 test('GET /api/v1/accounts/:id - should return 404 when account does not exist', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
   const nonExistentId = faker.string.uuid();
 
-  // Act
+  
   const response = await apiContext.get(`/api/v1/accounts/${nonExistentId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(404);
   const body = await response.json() as { success: boolean };
   expect(body.success).toBe(false);
 });
 
 test('GET /api/v1/accounts/:id - should return 403 when account belongs to another user', async () => {
-  // Arrange
+  
   const owner = await registerUser();
   const intruder = await registerUser();
   const createRes = await createAccount(owner.token, 'CHECKING');
   const { data: account } = await createRes.json() as { data: { id: string } };
 
-  // Act — intruder tries to access owner's account
+  // intruder tries to access owner's account
   const response = await apiContext.get(`/api/v1/accounts/${account.id}`, {
     headers: { Authorization: `Bearer ${intruder.token}` },
   });
 
-  // Assert
+  
   expect(response.status()).toBe(403);
   const body = await response.json() as { success: boolean };
   expect(body.success).toBe(false);
 });
 
 test('GET /api/v1/accounts/:id - should return 401 when no auth token is provided', async () => {
-  // Arrange
+  
   const { token } = await registerUser();
   const createRes = await createAccount(token, 'CHECKING');
   const { data: account } = await createRes.json() as { data: { id: string } };
 
-  // Act
+  
   const response = await apiContext.get(`/api/v1/accounts/${account.id}`);
 
-  // Assert
+  
   expect(response.status()).toBe(401);
 });
