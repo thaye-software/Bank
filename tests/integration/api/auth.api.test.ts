@@ -47,17 +47,17 @@ test.afterAll(async () => {
 });
 
 test('POST /api/v1/auth/register - should return 201 with a JWT token and user data when given valid credentials', async () => {
-  // Arrange
+
   const payload = {
     email: faker.internet.email(),
     password: 'SecurePass1',
     fullName: faker.person.fullName(),
   };
 
-  // Act
+
   const response = await apiContext.post('/api/v1/auth/register', { data: payload });
 
-  // Assert
+
   expect(response.status()).toBe(201);
   const body = await response.json() as {
     success: boolean;
@@ -78,7 +78,7 @@ test('POST /api/v1/auth/register - should return 201 with a JWT token and user d
 });
 
 test('POST /api/v1/auth/login - should return 200 with a JWT token when given valid credentials', async () => {
-  // Arrange
+
   const credentials = {
     email: faker.internet.email(),
     password: 'SecurePass1',
@@ -86,12 +86,12 @@ test('POST /api/v1/auth/login - should return 200 with a JWT token when given va
   };
   await apiContext.post('/api/v1/auth/register', { data: credentials });
 
-  // Act
+
   const response = await apiContext.post('/api/v1/auth/login', {
     data: { email: credentials.email, password: credentials.password },
   });
 
-  // Assert
+
   expect(response.status()).toBe(200);
   const body = await response.json() as {
     success: boolean;
@@ -103,7 +103,7 @@ test('POST /api/v1/auth/login - should return 200 with a JWT token when given va
 });
 
 test('GET /api/v1/auth/me - should return 200 with user data when given a valid JWT token', async () => {
-  // Arrange
+
   const credentials = {
     email: faker.internet.email(),
     password: 'SecurePass1',
@@ -112,12 +112,12 @@ test('GET /api/v1/auth/me - should return 200 with user data when given a valid 
   const registerResponse = await apiContext.post('/api/v1/auth/register', { data: credentials });
   const { token } = (await registerResponse.json() as { success: boolean; data: { token: string } }).data;
 
-  // Act
+
   const response = await apiContext.get('/api/v1/auth/me', {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Assert
+
   expect(response.status()).toBe(200);
   const body = await response.json() as {
     success: boolean;
