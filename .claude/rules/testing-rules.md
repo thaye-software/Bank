@@ -112,6 +112,81 @@ Example for the $100 SAVINGS minimum balance:
 - $100.00 → accept
 - $100.01 → accept
 
+### Parametrised tests (`it.each` / `describe.each`)
+When several tests share the same Arrange → Act → Assert shape and differ only in input/expected values, collapse them into a single parametrised test using Vitest's `it.each`. This is especially appropriate for:
+
+- **Equivalence partitioning** — all values in one partition share an expected outcome
+- **Boundary value analysis** — three boundary tests per threshold
+- **Tabular rule tests** — e.g. interest tiers, credit-score-to-APR mappings, the loan eligibility hard-rejection table
+
+Rules for parametrised tests:
+- Use a tuple form `[label, input, ...]` and put the label first so test names stay readable in the reporter.
+- The `it.each(...)('description: %s', ...)` template must interpolate the label, so each row gets a unique, descriptive name (no `test 1`, `test 2`).
+- Type the rows explicitly (`it.each<[string, Decimal]>([...])`) — never rely on inference for fixture data.
+- One parametrised block per partition / per branch, not one giant table mixing partitions. The grouping `describe` documents WHY these cases share an assertion.
+- The body of the parametrised test still uses AAA with blank lines.
+
+```typescript
+describe('Valid partition: $0.01 .. $10,000.00', () => {
+  it.each<[string, Decimal]>([
+    ['EP $4,999.99',                              new Decimal('4999.99')],
+    ['BV $0.01 (lower boundary)',                 new Decimal('0.01')],
+    ['BV $0.02 (just above lower boundary)',      new Decimal('0.02')],
+    ['BV $9,999.99 (just below upper boundary)',  new Decimal('9999.99')],
+    ['BV $10,000.00 (upper boundary)',            new Decimal('10000')],
+  ])('%s → ok', (_label, amount) => {
+    // Arrange / Act
+    const result = validateWithdrawalAmount(amount);
+
+    // Assert
+    expect(result.ok).toBe(true);
+  });
+});
+```
+
+**When NOT to parametrise:**
+- Tests with different setup, different mocks, or asserting on different fields → keep them as separate `it` blocks.
+- A single one-off scenario — parametrising one row hurts readability.
+- Whitebox decision-coverage tests where each branch has its own per-test rationale comment — branch tagging is clearer as individual `it` blocks.
+
+### No logic in test bodies (anti-pattern)
+Test code must be straight-line: Arrange → Act → Assert. The following are **forbidden** inside `it` / `it.each` bodies:
+
+- `if` / `else`
+- `switch`
+- `for` / `while` / `do…while` / `.forEach` / `.map` (when used to iterate test cases)
+- ternary expressions (`a ? b : c`) in assertions
+- `try` / `catch` to handle expected outcomes — assert with `expect(...).toThrow(...)` or `await expect(...).rejects.toThrow(...)`
+
+**Why:** logic in tests creates a second program that must itself be tested. A conditional assertion can silently skip its expectation when the guard is false; a loop hides which row failed. Tests must be obvious, deterministic, and produce a precise failure message that points at one line.
+
+**Result-type assertions without `if`:** the `Result<T, E>` discriminated union is the most common reason people reach for an `if (!result.ok)` narrowing. Assert on the whole shape instead — the assertion itself does the narrowing and gives a better failure message:
+
+```typescript
+// ❌ Anti-pattern — `if` is logic, and the assertion is silently skipped
+//                  if the discriminant is wrong.
+expect(result.ok).toBe(false);
+if (!result.ok) expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+
+// ✅ Straight-line — one assertion narrows AND checks the code.
+expect(result).toEqual({
+  ok: false,
+  error: expect.objectContaining({ code: ErrorCode.AMOUNT_TOO_LOW }),
+});
+
+// ✅ Also acceptable — two unguarded asserts. If `ok` is unexpectedly true,
+//    the second line throws a clear "cannot read 'code' of undefined" and
+//    the test fails loudly.
+expect(result.ok).toBe(false);
+expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+```
+
+**Allowed exceptions** (narrow — must be justified in a comment):
+- Iterating over **randomly-generated** or property-based inputs (e.g. `fast-check`) where the loop is the *point* of the test, not a way to compress hand-written cases. Hand-written cases must use `it.each`.
+- Loops in `tests/helpers/` setup utilities — those are not test bodies. Helpers may contain whatever logic they need.
+
+If you find yourself wanting an `if` to choose between two assertions, you have two test cases — split them into two `it` blocks (or `it.each` rows).
+
 ---
 
 ## 4. Mocking Rules
