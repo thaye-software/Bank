@@ -9,6 +9,14 @@ export async function seedDatabase(prisma: PrismaClient): Promise<void> {
   const users: User[] = [];
   const accounts: Account[] = [];
 
+  // Wipe transaction-related rows so each seed run starts from a clean ledger.
+  // Children (FraudSignal, ComplianceFlag) must go first — their FKs reference
+  // Transaction with the default RESTRICT behaviour.
+  await prisma.fraudSignal.deleteMany();
+  await prisma.complianceFlag.deleteMany();
+  await prisma.transaction.deleteMany();
+
+
   const staffSeed = {
     email: 'staff@nordicbank.com',
     password,
