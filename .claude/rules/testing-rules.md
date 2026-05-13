@@ -47,19 +47,32 @@ tests/helpers/setup/test.containers.ts
 
 ## 2. Test Structure — Arrange / Act / Assert
 
-Every test body uses AAA with blank lines separating sections:
+Every test body follows the AAA structure (Arrange → Act → Assert), but **does not label the sections**. Use a single blank line to separate Arrange from Act, and a single blank line to separate Act from Assert. The blank-line spacing is the sole structural cue — `// Arrange`, `// Act`, `// Assert` prefix comments are noise and must not be used.
 
 ```typescript
 it('should return APPROVED when all conditions are met', () => {
-  // Arrange
   const application = buildLoanApplication({ creditScore: 750, annualIncome: 80_000 });
 
-  // Act
   const result = evaluateLoanApplication(application);
 
-  // Assert
   expect(result.ok).toBe(true);
   expect(result.value.decision).toBe('APPROVED');
+});
+```
+
+If a piece of Arrange (or any section) needs a reason to exist — e.g. an unusual setup, a fixture that encodes a domain rule — add a short comment explaining *why*, not a label restating *what phase* it is:
+
+```typescript
+it('should exclude debits stamped before the since cutoff', async () => {
+  // one debit just now, one stamped 10 minutes ago — the older one must
+  // not be counted when the window is 5 minutes.
+  await txRepo.create({ … });
+  const stale = await txRepo.create({ … });
+  await prisma.transaction.update({ where: { id: stale.id }, data: { createdAt: tenMinAgo } });
+
+  const count = await txRepo.countDebitsInWindow(accountId, fiveMinutesAgo);
+
+  expect(count).toBe(1);
 });
 ```
 
@@ -111,6 +124,81 @@ Example for the $100 SAVINGS minimum balance:
 - $99.99 → reject with `BELOW_MINIMUM_BALANCE`
 - $100.00 → accept
 - $100.01 → accept
+
+### Parametrised tests (`it.each` / `describe.each`)
+When several tests share the same Arrange → Act → Assert shape and differ only in input/expected values, collapse them into a single parametrised test using Vitest's `it.each`. This is especially appropriate for:
+
+- **Equivalence partitioning** — all values in one partition share an expected outcome
+- **Boundary value analysis** — three boundary tests per threshold
+- **Tabular rule tests** — e.g. interest tiers, credit-score-to-APR mappings, the loan eligibility hard-rejection table
+
+Rules for parametrised tests:
+- Use a tuple form `[label, input, ...]` and put the label first so test names stay readable in the reporter.
+- The `it.each(...)('description: %s', ...)` template must interpolate the label, so each row gets a unique, descriptive name (no `test 1`, `test 2`).
+- Type the rows explicitly (`it.each<[string, Decimal]>([...])`) — never rely on inference for fixture data.
+- One parametrised block per partition / per branch, not one giant table mixing partitions. The grouping `describe` documents WHY these cases share an assertion.
+- The body of the parametrised test still uses AAA with blank lines.
+
+```typescript
+describe('Valid partition: $0.01 .. $10,000.00', () => {
+  it.each<[string, Decimal]>([
+    ['EP $4,999.99',                              new Decimal('4999.99')],
+    ['BV $0.01 (lower boundary)',                 new Decimal('0.01')],
+    ['BV $0.02 (just above lower boundary)',      new Decimal('0.02')],
+    ['BV $9,999.99 (just below upper boundary)',  new Decimal('9999.99')],
+    ['BV $10,000.00 (upper boundary)',            new Decimal('10000')],
+  ])('%s → ok', (_label, amount) => {
+    const result = validateWithdrawalAmount(amount);
+
+    expect(result.ok).toBe(true);
+  });
+});
+```
+
+(When Arrange and Act collapse into a single line, drop the leading blank line — there is no separation to mark.)
+
+**When NOT to parametrise:**
+- Tests with different setup, different mocks, or asserting on different fields → keep them as separate `it` blocks.
+- A single one-off scenario — parametrising one row hurts readability.
+- Whitebox decision-coverage tests where each branch has its own per-test rationale comment — branch tagging is clearer as individual `it` blocks.
+
+### No logic in test bodies (anti-pattern)
+Test code must be straight-line: Arrange → Act → Assert. The following are **forbidden** inside `it` / `it.each` bodies:
+
+- `if` / `else`
+- `switch`
+- `for` / `while` / `do…while` / `.forEach` / `.map` (when used to iterate test cases)
+- ternary expressions (`a ? b : c`) in assertions
+- `try` / `catch` to handle expected outcomes — assert with `expect(...).toThrow(...)` or `await expect(...).rejects.toThrow(...)`
+
+**Why:** logic in tests creates a second program that must itself be tested. A conditional assertion can silently skip its expectation when the guard is false; a loop hides which row failed. Tests must be obvious, deterministic, and produce a precise failure message that points at one line.
+
+**Result-type assertions without `if`:** the `Result<T, E>` discriminated union is the most common reason people reach for an `if (!result.ok)` narrowing. Assert on the whole shape instead — the assertion itself does the narrowing and gives a better failure message:
+
+```typescript
+// ❌ Anti-pattern — `if` is logic, and the assertion is silently skipped
+//                  if the discriminant is wrong.
+expect(result.ok).toBe(false);
+if (!result.ok) expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+
+// ✅ Straight-line — one assertion narrows AND checks the code.
+expect(result).toEqual({
+  ok: false,
+  error: expect.objectContaining({ code: ErrorCode.AMOUNT_TOO_LOW }),
+});
+
+// ✅ Also acceptable — two unguarded asserts. If `ok` is unexpectedly true,
+//    the second line throws a clear "cannot read 'code' of undefined" and
+//    the test fails loudly.
+expect(result.ok).toBe(false);
+expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+```
+
+**Allowed exceptions** (narrow — must be justified in a comment):
+- Iterating over **randomly-generated** or property-based inputs (e.g. `fast-check`) where the loop is the *point* of the test, not a way to compress hand-written cases. Hand-written cases must use `it.each`.
+- Loops in `tests/helpers/` setup utilities — those are not test bodies. Helpers may contain whatever logic they need.
+
+If you find yourself wanting an `if` to choose between two assertions, you have two test cases — split them into two `it` blocks (or `it.each` rows).
 
 ---
 
@@ -208,6 +296,55 @@ export async function truncateAll(prisma: PrismaClient) {
 
 - Never rely on row ordering in assertions — always use `orderBy` explicitly when order matters
 - `afterAll`: disconnect the Prisma client
+
+### Bi-directional traceability
+
+A DB integration test pins specific DB calls inside a specific production file (a controller, a service, a job). The file must be navigable in both directions:
+
+- **Forward** (controller → test): a developer reading the controller can find the test section pinning a given line.
+- **Backward** (test → controller): a developer reading the test can find the controller line each section verifies.
+
+Required at the top of every `*.db.test.ts` file:
+
+1. **Subject line** naming the production file and line range under test.
+2. **Traceability matrix** mapping each test section to the controller line(s) and the DB call exercised.
+
+Required on every section's describe block:
+
+3. **Repeated trace block** listing the controller line(s) the section covers, plus a one-sentence "Verifies:" line.
+
+Example header (taken from `withdrawals.db.test.ts`):
+
+```typescript
+// Subject under test:
+//   src/controllers/transactions.controller.ts → withdraw  (L43–L113)
+//
+// ── Bi-directional traceability matrix ─────────────────────────────────────
+//
+//   Section │ Controller line(s) │ DB call (in production code)
+//   ────────┼────────────────────┼──────────────────────────────────────────
+//   §1      │ L89, L100, L103    │ txRepo.create({ type: 'WITHDRAWAL'|'FEE' })
+//   §2      │ L65                │ txRepo.sumDebitsInWindow(accountId, since24h)
+//   §3      │ L75, L76           │ txRepo.countDebitsInWindow(accountId, …)
+//   §4      │ L98–L106           │ deps.db.$transaction(async () => { … })
+//   §5      │ L54                │ accountRepo.findByIdForUpdate(accountId)
+```
+
+Example per-section block:
+
+```typescript
+// ==========================================================================
+// §2. TransactionRepository.sumDebitsInWindow — rolling-24h aggregate
+//
+// Traces controller lines:
+//   L65 — const dailySum = await txRepo.sumDebitsInWindow(accountId, since24h);
+// Verifies: the aggregate feeds checkDailyLimit(...) with a correct sum —
+// scoped to the account, only inside the window, and only counting
+// COMPLETED + REVIEW_FLAGGED debit-direction rows.
+// ==========================================================================
+```
+
+When the controller is refactored and line numbers shift, update the matrix and the per-section trace blocks in the same commit. Stale line numbers defeat the convention.
 
 ---
 

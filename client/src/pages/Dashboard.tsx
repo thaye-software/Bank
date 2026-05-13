@@ -1,13 +1,27 @@
+import { useQueries } from '@tanstack/react-query';
 import { useAccounts } from '@/hooks/useAccounts';
-import { useTransactionHistory } from '@/hooks/useTransactions';
+import { listByAccount } from '@/api/transactions.api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import type { AccountType, Transaction } from '@/types/api';
 
 export function Dashboard() {
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
-  const firstAccountId = accounts?.[0]?.id;
-  const { data: transactions, isLoading: txLoading } = useTransactionHistory(firstAccountId);
+
+  const accountList = accounts ?? [];
+  const txQueries = useQueries({
+    queries: accountList.map((account) => ({
+      queryKey: ['transactions', account.id],
+      queryFn: () => listByAccount(account.id),
+    })),
+  });
+
+  const txLoading = txQueries.some((q) => q.isLoading);
+  const accountTypeById = new Map<string, AccountType>(accountList.map((a) => [a.id, a.type]));
+  const transactions: Transaction[] = txQueries
+    .flatMap((q) => q.data ?? [])
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <div className="space-y-6">
@@ -21,7 +35,7 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {(accounts ?? []).map((account) => (
+            {accountList.map((account) => (
               <Card key={account.id}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{account.type}</CardTitle>
@@ -46,9 +60,10 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="space-y-2">
-            {(transactions ?? []).slice(0, 5).map((tx) => (
+            {transactions.slice(0, 10).map((tx) => (
               <div key={tx.id} className="flex items-center justify-between rounded-lg border px-4 py-2">
                 <span className="text-sm text-muted-foreground">{tx.type}</span>
+                <span className="text-sm font-medium">{accountTypeById.get(tx.accountId) ?? '—'}</span>
                 <span className="text-sm font-medium">${tx.amount.toFixed(2)}</span>
               </div>
             ))}

@@ -222,7 +222,7 @@ Any other currency → `UNSUPPORTED_CURRENCY`.
 - Fee is debited separately as a `FEE` transaction. Conversion uses the post-fee amount.
 
 ### 7.5 Conversion Limits
-- Min: **$1.00** | Max single: **$50,000.00** | Daily (rolling 24h): **$25,000.00** (all in USD equiv.)
+- Min: **$1.00** | Max single: **$25,000.00** | Daily (rolling 24h): **$50,000.00** (all in USD equiv.)
 
 ---
 
