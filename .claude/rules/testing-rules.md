@@ -249,33 +249,98 @@ Never use raw object literals in tests. All schema changes only need updating in
 
 ## 6. Integration Tests — API Layer
 
-Use `supertest` via the test app helper:
+API integration tests use **Playwright's `request` context** (not supertest, not Vitest). The real Express app is wrapped with `createTestApp(prisma)`, bound to an ephemeral `http.Server` on a random port, and driven through Playwright's APIRequestContext. The full middleware stack — auth, Zod validation, error handler — runs exactly as in production.
+
+Runner: `@playwright/test`. Inside an `*.api.test.ts` file you use `test`, `expect`, and `request` from `@playwright/test`. **Never import from `vitest`** — `vi.fn`, `vi.useFakeTimers`, `vi.setSystemTime` are not available in the Playwright runner. Time-sensitive logic (weekend checks, rolling windows) must be controlled by injecting a clock through the request body / route, or by writing rows directly to the DB with the desired `createdAt`, or by gating on `process.env`.
+
+Shared helpers in `tests/helpers/server.helpers.ts`:
 
 ```typescript
-import { createTestApp } from '../helpers/server.helpers';
-const app = createTestApp(); // real Express app, real middleware
+export function createTestApp(db: PrismaClient) { return createApp({ db }); }
+export function buildTestToken(overrides?: Partial<JwtPayload>): string { … }
 ```
 
-Every API integration test must:
-1. Seed required DB state in `beforeEach` via `db.helpers.ts`
-2. Make the HTTP request via supertest
-3. Assert HTTP status code **first**, then response body shape
-4. Assert DB state changed correctly by querying the test DB directly via Prisma
+`buildTestToken` returns a **real** signed JWT for the test user — never hand-construct a `Bearer test-…` string; the auth middleware will reject it.
+
+### Required structure of every `*.api.test.ts`
+
+1. `test.beforeAll`: start the Postgres testcontainer, push the schema, build the test app, bind it to `http.createServer(...)` on port 0, open an `APIRequestContext` against that port.
+2. `test.beforeEach`: scope-delete rows for the dedicated test fixtures (do **not** truncate globally — the FK graph from `loan_applications`, `fraud_signals`, `compliance_flags` makes `prisma.X.deleteMany()` brittle).
+3. Each `test(...)`:
+   - Build the request payload from a factory.
+   - Call the endpoint with `apiContext.<method>(path, { headers, data })`.
+   - Assert **HTTP status first** (`response.status()`), then response body shape (`await response.json()`).
+   - Assert DB state changed correctly by querying the test DB directly via Prisma.
+4. `test.afterAll`: dispose the `APIRequestContext`, disconnect Prisma, close the http.Server.
 
 ```typescript
-it('should return 201 and persist the account', async () => {
-  const res = await request(app)
-    .post('/api/v1/accounts')
-    .set('Authorization', `Bearer ${testToken}`)
-    .send({ type: 'SAVINGS' });
+import { test, expect, request } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+import http from 'http';
+import { execSync } from 'child_process';
+import { PrismaClient } from '../../../src/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { startPostgresTestContainer } from '../../helpers/setup/test.containers';
+import { createTestApp, buildTestToken } from '../../helpers/server.helpers';
 
-  expect(res.status).toBe(201);
-  expect(res.body.data.type).toBe('SAVINGS');
+let server: http.Server;
+let apiContext: APIRequestContext;
+let prisma: PrismaClient;
 
-  const row = await prisma.account.findUnique({ where: { id: res.body.data.id } });
+test.beforeAll(async () => {
+  test.setTimeout(120_000);
+
+  const { postgres } = await startPostgresTestContainer();
+  const connectionString = postgres.getConnectionUri();
+  process.env['DATABASE_URL'] = connectionString;
+
+  const adapter = new PrismaPg({ connectionString });
+  prisma = new PrismaClient({ adapter });
+
+  execSync('npx prisma db push', {
+    env: { ...process.env, DATABASE_URL: connectionString },
+    stdio: 'inherit',
+  });
+
+  const app = createTestApp(prisma);
+  server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const { port } = server.address() as { port: number };
+
+  apiContext = await request.newContext({
+    baseURL: `http://localhost:${port}`,
+    extraHTTPHeaders: { 'Content-Type': 'application/json' },
+  });
+});
+
+test.afterAll(async () => {
+  await apiContext.dispose();
+  await prisma.$disconnect();
+  await new Promise<void>((resolve, reject) =>
+    server.close((err) => (err ? reject(err) : resolve())),
+  );
+});
+
+test('POST /api/v1/accounts — should return 201 and persist the account', async () => {
+  const token = buildTestToken({ userId: seededUserId });
+
+  const response = await apiContext.post('/api/v1/accounts', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { type: 'SAVINGS' },
+  });
+
+  expect(response.status()).toBe(201);
+  const body = await response.json() as { success: boolean; data: { id: string; type: string } };
+  expect(body.data.type).toBe('SAVINGS');
+
+  const row = await prisma.account.findUnique({ where: { id: body.data.id } });
   expect(row).not.toBeNull();
 });
 ```
+
+### Bi-directional traceability (same convention as `*.db.test.ts`)
+
+Every `*.api.test.ts` opens with a **subject** line and a **traceability matrix** mapping each `§N` test section to the controller / middleware / router line(s) and the request path it covers. Each section then repeats its trace block in a comment above the `test(...)`. See `tests/integration/api/transactions/withdrawals.api.test.ts` for the canonical layout.
 
 ---
 
@@ -356,13 +421,15 @@ Every business rule rejection must have at least one negative test asserting:
 3. **No side effect** (e.g., no transaction record created when withdrawal is rejected)
 
 ```typescript
-it('should return 422 and not create a transaction when balance falls below minimum', async () => {
-  const res = await request(app)
-    .post('/api/v1/transactions/withdraw')
-    .send({ accountId, amount: '99999.00' });
+test('should return 422 and not create a transaction when balance falls below minimum', async () => {
+  const response = await apiContext.post('/api/v1/transactions/withdraw', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { accountId, amount: '99999.00' },
+  });
 
-  expect(res.status).toBe(422);
-  expect(res.body.error.code).toBe('BELOW_MINIMUM_BALANCE');
+  expect(response.status()).toBe(422);
+  const body = await response.json() as { error: { code: string } };
+  expect(body.error.code).toBe('BELOW_MINIMUM_BALANCE');
 
   const count = await prisma.transaction.count({ where: { accountId } });
   expect(count).toBe(0);
