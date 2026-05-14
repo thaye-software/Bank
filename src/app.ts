@@ -14,6 +14,7 @@ import { makeKycRouter } from "./routes/kyc.router";
 
 export interface AppDeps {
   db: PrismaClient;
+  clock?: () => Date;
 }
 
 const globalLimiter = rateLimit({
