@@ -40,6 +40,9 @@ export function validateTransferAmount(amount: Decimal): Result<void> {
 }
 
 export function validateSelfTransfer(sourceId: string, destinationId: string): Result<void> {
+  if (sourceId === '' || destinationId === '') {
+    return err(new BusinessRuleError(ErrorCode.INVALID_ACCOUNT_ID, 'Account id must not be empty'));
+  }
   if (sourceId === destinationId) {
     return err(new BusinessRuleError(ErrorCode.SELF_TRANSFER_NOT_ALLOWED, 'Cannot transfer to the same account'));
   }
