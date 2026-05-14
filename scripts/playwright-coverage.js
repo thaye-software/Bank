@@ -46,15 +46,16 @@ mkdirSync(tempDir, { recursive: true });
 mkdirSync(reportDir, { recursive: true });
 
 // Playwright is invoked through npx + shell on purpose: it accepts no glob
-// args, and using a shell lets npx resolve the binary on both Linux and
-// Windows. The NODE_V8_COVERAGE env var is inherited by every worker.
+// args, and `shell: true` is what lets npx resolve to npx.cmd on Windows.
+// (Modern Node refuses to spawn .cmd files without a shell.)
+// The NODE_V8_COVERAGE env var is inherited by every spawned worker.
 const playwright = spawnSync(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
+  'npx',
   ['playwright', 'test', ...playwrightArgs],
   {
     stdio: 'inherit',
     env: { ...process.env, NODE_V8_COVERAGE: tempDir },
-    shell: false,
+    shell: true,
   },
 );
 
@@ -67,6 +68,7 @@ const report = spawnSync(
     'report',
     '--temp-directory', tempDir,
     '--reporter', 'lcov',
+    '--reporter', 'text',
     '--reporter', 'text-summary',
     '--report-dir', reportDir,
     '--include', 'src/**',
