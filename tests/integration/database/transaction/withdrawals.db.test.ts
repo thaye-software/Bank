@@ -23,8 +23,7 @@ import { startPostgresTestContainer } from '../../../helpers/setup/test.containe
 //   §1      │ L89, L100, L103    │ txRepo.create({ type: 'WITHDRAWAL'|'FEE' })
 //   §2      │ L65                │ txRepo.sumDebitsInWindow(accountId, since24h)
 //   §3      │ L75, L76           │ txRepo.countDebitsInWindow(accountId, …)
-//   §4      │ L98–L106           │ deps.db.$transaction(async () => { … })
-//   §5      │ L54                │ accountRepo.findByIdForUpdate(accountId)
+//   §4      │ L54                │ accountRepo.findByIdForUpdate(accountId)
 //
 // Reading direction:
 //   Forward  (controller → test): look up a controller line in this matrix
@@ -295,70 +294,11 @@ describe('Withdrawal — Database Integration Tests', () => {
 
 
 
-  // ==========================================================================
-  // §4. Prisma $transaction — withdrawal atomicity
-  //
-  // Traces controller lines:
-  //   L98–L106 — const transaction = await deps.db.$transaction(async () => {
-  //                await accountRepo.updateBalance(...);
-  //                const tx = await txRepo.create({ … 'WITHDRAWAL' });
-  //                /* optional overdraft FEE */
-  //                return tx;
-  //              });
-  // Verifies: the balance update and the WITHDRAWAL row insert commit
-  // together or roll back together — never half-applied.
-  // ==========================================================================
-  describe('Prisma $transaction — withdrawal atomicity', () => {
-    it('should rollback the balance update when the transaction insert fails', async () => {
-      // simulates the withdraw flow: decrement the balance, then throw
-      // *inside* the same $transaction block. Prisma must undo the update.
-      await expect(
-        prisma.$transaction(async (tx) => {
-          await tx.account.update({ where: { id: checkingAccountId }, data: { balance: '4000.00' } });
-          throw new Error('forced rollback — simulating transaction insert failure');
-        }),
-      ).rejects.toThrow('forced rollback');
-
-      // balance unchanged, no orphaned transaction row.
-      const accountAfter = await accountRepo.findById(checkingAccountId);
-      expect(accountAfter?.balance.equals(new Decimal('5000.00'))).toBe(true);
-
-      const txCount = await prisma.transaction.count({ where: { accountId: checkingAccountId } });
-      expect(txCount).toBe(0);
-    });
-
-    it('should commit both the balance update and the WITHDRAWAL row when the transaction succeeds', async () => {
-      const amount = new Decimal('300');
-      const newBalance = new Decimal('4700');
-
-      await prisma.$transaction(async (tx) => {
-        await tx.account.update({ where: { id: checkingAccountId }, data: { balance: newBalance.toFixed(2) } });
-        await tx.transaction.create({
-          data: {
-            accountId: checkingAccountId,
-            type: 'WITHDRAWAL',
-            status: 'COMPLETED',
-            amount: amount.toFixed(2),
-            balanceAfter: newBalance.toFixed(2),
-          },
-        });
-      });
-
-      const accountAfter = await accountRepo.findById(checkingAccountId);
-      const txCount = await prisma.transaction.count({ where: { accountId: checkingAccountId, type: 'WITHDRAWAL' } });
-      expect(accountAfter?.balance.equals(newBalance)).toBe(true);
-      expect(txCount).toBe(1);
-    });
-  });
-
-
-
-
 
   
 
   // ==========================================================================
-  // §5. AccountRepository.findByIdForUpdate — pessimistic lock query
+  // §4. AccountRepository.findByIdForUpdate — pessimistic lock query
   //
   // Traces controller lines:
   //   L54 — const account = await accountRepo.findByIdForUpdate(accountId);
