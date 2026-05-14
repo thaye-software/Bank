@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('test', async ({ page }) => {
+test('Happy path for withdrawing money', async ({ page }) => {
   // Auth is provided by auth.setup.ts via storageState — start straight on the dashboard.
   await page.goto('/');
   await page.getByRole('link', { name: 'Withdraw' }).click();
