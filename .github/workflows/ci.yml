@@ -178,15 +178,8 @@ jobs:
       - name: Seed e2e database
         run: npx prisma db seed
 
-      - name: Start instrumented backend
-        run: |
-          mkdir -p coverage/raw-e2e
-          NODE_V8_COVERAGE="$(pwd)/coverage/raw-e2e" \
-            nohup npx tsx src/server.ts > server.log 2>&1 &
-          echo $! > server.pid
-
-      - name: Start client
-        run: nohup npm run dev:client > client.log 2>&1 &
+      - name: Start server and client
+        run: nohup npm run dev > server.log 2>&1 &
 
       - name: Wait for backend to be healthy
         run: timeout 30 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
@@ -197,30 +190,6 @@ jobs:
       - name: Run E2E tests
         run: npx playwright test --project=e2e-chromium --project=e2e-firefox --project=e2e-webkit --pass-with-no-tests
 
-      - name: Stop backend so V8 flushes coverage
-        if: always()
-        run: |
-          if [ -f server.pid ]; then
-            kill -TERM "$(cat server.pid)" || true
-            # Give Node a few seconds to write the v8 coverage JSON files
-            for i in $(seq 1 15); do
-              if ! kill -0 "$(cat server.pid)" 2>/dev/null; then break; fi
-              sleep 1
-            done
-          fi
-
-      - name: Generate E2E LCOV report
-        if: always()
-        run: npm run coverage:e2e:report
-
-      - name: Upload E2E coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-playwright-e2e
-          path: coverage/playwright-e2e/
-          if-no-files-found: warn
-
       - name: Dump server log on failure
         if: failure()
         run: cat server.log || true
@@ -229,10 +198,13 @@ jobs:
   sonar:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
-    # Run sonar only after every test layer has produced its coverage report.
-    # `if: always()` keeps sonar gating active even when one suite fails so we
-    # still get a quality report on the partial coverage that was produced.
-    needs: [unit, integration, e2e]
+    # Run sonar after the coverage-producing test layers finish. `if: always()`
+    # keeps sonar gating active even when one suite fails so we still get a
+    # quality report on the partial coverage that was produced. The e2e job
+    # is intentionally NOT in `needs` — it doesn't contribute coverage data
+    # (its backend code paths are already covered by api-integration tests),
+    # so there's no reason to make sonar wait for it.
+    needs: [unit, integration]
     if: always()
     env:
       NODE_ENV: test
@@ -265,13 +237,6 @@ jobs:
         with:
           name: coverage-playwright-api
           path: coverage/playwright-api
-        continue-on-error: true
-
-      - name: Download Playwright E2E coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-playwright-e2e
-          path: coverage/playwright-e2e
         continue-on-error: true
 
       - name: List downloaded coverage files

@@ -32,7 +32,6 @@
     "test:unit:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:integration:db:coverage": "vitest run --config vitest.integration.config.ts --coverage",
     "test:api:coverage": "node scripts/playwright-coverage.js coverage/raw-api coverage/playwright-api -- --project=api-integration",
-    "coverage:e2e:report": "node scripts/c8-report.js coverage/raw-e2e coverage/playwright-e2e",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",

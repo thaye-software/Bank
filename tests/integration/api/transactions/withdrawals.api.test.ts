@@ -1,10 +1,10 @@
 import { test, expect, request } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
-import { PrismaClient } from '../../../src/generated/prisma/client';
+import { PrismaClient } from '../../../../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import Decimal from 'decimal.js';
-import { startPostgresTestContainer } from '../../helpers/setup/test.containers';
-import { createTestApp, buildTestToken } from '../../helpers/server.helpers';
+import { startPostgresTestContainer } from '../../../helpers/setup/test.containers';
+import { createTestApp, buildTestToken } from '../../../helpers/server.helpers';
 import { faker } from '@faker-js/faker';
 import { execSync } from 'child_process';
 import http from 'http';
@@ -41,9 +41,14 @@ import http from 'http';
 let server: http.Server;
 let apiContext: APIRequestContext;
 let prisma: PrismaClient;
+let clockNow: Date;
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
+
+  // default — tests that care about "now" override this before firing
+  // the request. See the SAVINGS off-hours test in §6.
+  clockNow = new Date();
 
   const { postgres } = await startPostgresTestContainer();
   const connectionString = postgres.getConnectionUri();
@@ -57,7 +62,10 @@ test.beforeAll(async () => {
     stdio: 'inherit',
   });
 
-  const app = createTestApp(prisma);
+  // Inject the clock via AppDeps. The closure reads `clockNow` afresh on
+  // every request, so mutating the variable before the next API call
+  // changes the controller's notion of "now".
+  const app = createTestApp(prisma, { clock: () => clockNow });
   server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const { port } = server.address() as { port: number };
@@ -66,6 +74,12 @@ test.beforeAll(async () => {
     baseURL: `http://localhost:${port}`,
     extraHTTPHeaders: { 'Content-Type': 'application/json' },
   });
+});
+
+// Reset to wall-clock time before every test. Per-test overrides assign
+// after this hook runs.
+test.beforeEach(() => {
+  clockNow = new Date();
 });
 
 test.afterAll(async () => {
@@ -364,16 +378,15 @@ test('POST /withdraw — should return 422 ACCOUNT_NOT_ACTIVE when account is PE
 //
 // Traces controller lines:
 //   L61–L62 — checkSavingsOffHours(account.type, now.getUTCHours())
-// Verifies: at the API layer the time-of-day guard wires up correctly. The
-// server reads its own clock (controller uses `new Date()`), so this test
-// runs only during the blocked window. The rule itself is exhaustively
-// covered by the unit test; this assertion is wiring verification.
+// Verifies: at the API layer the time-of-day guard wires up correctly. "Now"
+// is controlled deterministically by setting `clockNow` to a fixed instant
+// inside the blocked window — the same DI seam used by the transfer test for
+// the weekend branch. The rule itself is exhaustively covered by the unit
+// test; this assertion is wiring verification.
 // ===========================================================================
 
-test('POST /withdraw — should return 422 SAVINGS_OFFHOURS_RESTRICTION when called on a SAVINGS account between 00–06 UTC', async () => {
-  const utcHour = new Date().getUTCHours();
-  test.skip(!(utcHour >= 0 && utcHour < 6), `current UTC hour is ${utcHour}; SAVINGS off-hours rule only applies between 00–06`);
-
+test('POST /withdraw — should return 422 SAVINGS_OFFHOURS_RESTRICTION when called on a SAVINGS account inside the 00–06 UTC window', async () => {
+  clockNow = new Date('2026-05-18T03:00:00Z'); // Monday 03:00 UTC — inside 00–06
   const { token, accountId } = await createReadyAccount({ type: 'SAVINGS', balance: '500.00' });
 
   const response = await postWithdraw(token, { accountId, amount: '10.00' });
@@ -381,6 +394,15 @@ test('POST /withdraw — should return 422 SAVINGS_OFFHOURS_RESTRICTION when cal
   expect(response.status()).toBe(422);
   const body = await response.json() as { error: { code: string } };
   expect(body.error.code).toBe('SAVINGS_OFFHOURS_RESTRICTION');
+});
+
+test('POST /withdraw — should NOT trigger SAVINGS_OFFHOURS_RESTRICTION when called outside the 00–06 UTC window', async () => {
+  clockNow = new Date('2026-05-18T12:00:00Z'); // Monday 12:00 UTC — outside the window
+  const { token, accountId } = await createReadyAccount({ type: 'SAVINGS', balance: '500.00' });
+
+  const response = await postWithdraw(token, { accountId, amount: '10.00' });
+
+  expect(response.status()).toBe(201);
 });
 
 

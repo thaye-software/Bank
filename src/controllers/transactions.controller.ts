@@ -43,7 +43,7 @@ export function makeTransactionsController(deps: AppDeps) {
   const withdraw = asyncHandler(async (req: Request, res: Response) => {
     const { accountId, amount: rawAmount, description } = req.body as { accountId: string; amount: number; description?: string };
     const amount = new Decimal(rawAmount);
-    const now = new Date();
+    const now: Date = deps.clock !== undefined ? deps.clock() : new Date();
 
     const amountCheck = validateWithdrawalAmount(amount);
     if (!amountCheck.ok) throw amountCheck.error;
@@ -117,7 +117,7 @@ export function makeTransactionsController(deps: AppDeps) {
       sourceAccountId: string; destinationAccountId: string; amount: number; description?: string;
     };
     const amount = new Decimal(rawAmount);
-    const now = new Date();
+    const now: Date = deps.clock !== undefined ? deps.clock() : new Date();
 
     const selfCheck = validateSelfTransfer(sourceAccountId, destinationAccountId);
     if (!selfCheck.ok) throw selfCheck.error;
