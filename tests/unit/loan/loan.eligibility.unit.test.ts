@@ -1,7 +1,28 @@
+/*
+ * Branch coverage map — loan.eligibility.unit.test.ts
+ *
+ * R1 age           : <18, ==0, ==18, >18
+ * R2 KYC           : PENDING, REJECTED, VERIFIED
+ * R3 employment    : UNEMPLOYED, EMPLOYED, SELF_EMPLOYED, RETIRED
+ * R4 credit min    : <500, ==0, ==500
+ * R5 amount min    : <500, ==0, ==500
+ * R6 amount max    : >500_000, ==500_000
+ * R7 term          : valid set {12,24,36,48,60}, 6, 18, 0
+ * R8 active loans  : >=3, >3, ==2
+ * R9 income        : ==0, <0, >0
+ * tier cap         : exceed cap per tier, at cap
+ * DTI              : >50%, marginal+lowCredit, marginal+highCredit
+ * APR cap          : direct test via calculateApr (was tautological before)
+ * pmt              : zero rate, positive rate, invalid term guard
+ * priority         : R1 wins over R2, R2 wins over R3
+ */
+
 import { describe, expect, it } from 'vitest';
 import {
   evaluateLoanApplication,
   pmt,
+  calculateApr,
+  getCreditTier,
   type LoanApplicationInput,
   type LoanApproval,
   type LoanRejection,
@@ -56,6 +77,75 @@ describe('pmt()', () => {
   it('total repayment exceeds principal when rate > 0', () => {
     const monthly = pmt(0.07, 24, 10_000);
     expect(monthly * 24).toBeGreaterThan(10_000);
+  });
+
+  it('throws RangeError when termMonths is 0', () => {
+    expect(() => pmt(0.07, 0, 10_000)).toThrow(RangeError);
+  });
+
+  it('throws RangeError when termMonths is negative', () => {
+    expect(() => pmt(0.07, -12, 10_000)).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getCreditTier() — direct
+// ---------------------------------------------------------------------------
+
+describe('getCreditTier()', () => {
+  it('returns null for scores below 500', () => {
+    expect(getCreditTier(499)).toBeNull();
+  });
+
+  it('returns null for scores above 850', () => {
+    expect(getCreditTier(851)).toBeNull();
+  });
+
+  it('returns the top tier for 750+', () => {
+    const tier = getCreditTier(800);
+    expect(tier?.baseRate).toBe(0.05);
+    expect(tier?.maxLoanAmount).toBe(500_000);
+  });
+
+  it('returns the bottom tier for 500–599', () => {
+    const tier = getCreditTier(550);
+    expect(tier?.baseRate).toBe(0.18);
+    expect(tier?.maxLoanAmount).toBe(20_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateApr() — direct (replaces the previously tautological APR-cap test)
+// ---------------------------------------------------------------------------
+
+describe('calculateApr()', () => {
+  it('adds the SELF_EMPLOYED modifier (+1.5%) to base rate', () => {
+    expect(calculateApr(0.07, 'SELF_EMPLOYED')).toBeCloseTo(0.085, 5);
+  });
+
+  it('adds the RETIRED modifier (+0.5%) to base rate', () => {
+    expect(calculateApr(0.07, 'RETIRED')).toBeCloseTo(0.075, 5);
+  });
+
+  it('applies no modifier for EMPLOYED', () => {
+    expect(calculateApr(0.07, 'EMPLOYED')).toBeCloseTo(0.07, 5);
+  });
+
+  it('applies no modifier for UNEMPLOYED (rule R3 blocks them earlier anyway)', () => {
+    expect(calculateApr(0.07, 'UNEMPLOYED')).toBeCloseTo(0.07, 5);
+  });
+
+  it('caps at 25% when base + modifier would exceed cap', () => {
+    // 24% + 1.5% = 25.5% → capped at 25%
+    expect(calculateApr(0.24, 'SELF_EMPLOYED')).toBe(0.25);
+  });
+
+  it('caps at 25% even with extreme base rates', () => {
+    expect(calculateApr(0.30, 'EMPLOYED')).toBe(0.25);
+  });
+
+  it('does not cap below MAX_APR', () => {
+    expect(calculateApr(0.10, 'EMPLOYED')).toBeLessThan(0.25);
   });
 });
 
@@ -143,6 +233,11 @@ describe('R4 — credit score minimum', () => {
 
   it('accepts credit score exactly at 500', () => {
     approved({ ...BASE_INPUT, creditScore: 500, requestedAmount: 1_000 });
+  });
+
+  it('rejects credit score above 850 as outside eligible range', () => {
+    const result = rejected({ ...BASE_INPUT, creditScore: 900 });
+    expect(result.rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
   });
 });
 
@@ -241,8 +336,17 @@ describe('R9 — annual income', () => {
     expect(result.rejectionCode).toBe(ErrorCode.INVALID_INCOME);
   });
 
-  it('accepts positive income', () => {
-    approved({ ...BASE_INPUT, annualIncome: 1 });
+  it('accepts positive income (with debt scaled to keep DTI viable)', () => {
+    // Note: annualIncome:1 + monthlyDebt:200 → DTI is astronomical, which would
+    // hit DTI_TOO_HIGH, not approval. The previous test passed by accident.
+    // Use a sensible low-but-positive income with zero debt.
+    approved({ ...BASE_INPUT, annualIncome: 30_000, monthlyDebt: 0 });
+  });
+
+  it('rejects extreme low income via DTI rather than R9', () => {
+    // annualIncome:1 means monthlyIncome ≈ $0.083 → any payment blows DTI past 50%
+    const result = rejected({ ...BASE_INPUT, annualIncome: 1, monthlyDebt: 0 });
+    expect(result.rejectionCode).toBe(ErrorCode.DTI_TOO_HIGH);
   });
 });
 
@@ -277,7 +381,6 @@ describe('credit tier — amount limit', () => {
 
 describe('DTI — debt-to-income ratio', () => {
   it('rejects when DTI exceeds 50%', () => {
-    // High debt relative to income forces DTI > 0.5
     const result = rejected({
       ...BASE_INPUT,
       annualIncome: 24_000,   // $2,000/month
@@ -287,12 +390,11 @@ describe('DTI — debt-to-income ratio', () => {
   });
 
   it('rejects marginal DTI (>43%) combined with credit score below 650', () => {
-    // Construct a case where DTI lands between 43–50% and credit score < 650
     const result = rejected({
       ...BASE_INPUT,
       creditScore: 620,
-      annualIncome: 36_000,  // $3,000/month
-      monthlyDebt: 1_100,    // pushes total DTI into marginal zone
+      annualIncome: 36_000,
+      monthlyDebt: 1_100,
       requestedAmount: 5_000,
       requestedTermMonths: 60,
     });
@@ -300,7 +402,6 @@ describe('DTI — debt-to-income ratio', () => {
   });
 
   it('accepts marginal DTI when credit score is 650 or above', () => {
-    // Same DTI scenario but with a qualifying credit score
     approved({
       ...BASE_INPUT,
       creditScore: 650,
@@ -313,7 +414,7 @@ describe('DTI — debt-to-income ratio', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Approval — output shape and APR calculation
+// Approval — output shape and APR through-flow
 // ---------------------------------------------------------------------------
 
 describe('approval — output correctness', () => {
@@ -325,22 +426,21 @@ describe('approval — output correctness', () => {
     expect(result.monthlyPayment).toBeGreaterThan(0);
   });
 
-  it('applies SELF_EMPLOYED rate modifier (+1.5%)', () => {
+  it('applies SELF_EMPLOYED rate modifier through the full evaluation', () => {
     const employed = approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
     const selfEmployed = approved({ ...BASE_INPUT, employmentStatus: 'SELF_EMPLOYED' });
     expect(selfEmployed.apr).toBeGreaterThan(employed.apr);
   });
 
-  it('applies RETIRED rate modifier (+0.5%)', () => {
+  it('applies RETIRED rate modifier through the full evaluation', () => {
     const employed = approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
     const retired = approved({ ...BASE_INPUT, employmentStatus: 'RETIRED' });
     expect(retired.apr).toBeGreaterThan(employed.apr);
   });
 
-  it('caps APR at 25%', () => {
-    // Score 500–599 base rate is 18%; SELF_EMPLOYED adds 1.5% → 19.5%, still under cap
-    // Use a scenario that would exceed 25% if uncapped (not possible with current tiers,
-    // so we just verify the cap is never exceeded)
+  it('approved APR is always at or below MAX_APR (25%)', () => {
+    // Verifies the cap propagates through evaluateLoanApplication.
+    // Direct cap behaviour is asserted in the calculateApr() describe-block above.
     const result = approved({
       ...BASE_INPUT,
       creditScore: 500,
@@ -378,5 +478,15 @@ describe('rule priority', () => {
   it('rejects on KYC before checking employment', () => {
     const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING', employmentStatus: 'UNEMPLOYED' });
     expect(result.rejectionCode).toBe(ErrorCode.KYC_NOT_VERIFIED);
+  });
+
+  it('rejects on employment before checking credit score', () => {
+    const result = rejected({ ...BASE_INPUT, employmentStatus: 'UNEMPLOYED', creditScore: 400 });
+    expect(result.rejectionCode).toBe(ErrorCode.UNEMPLOYED_APPLICANT);
+  });
+
+  it('rejects on R8 (active loans) before reaching R9 (income)', () => {
+    const result = rejected({ ...BASE_INPUT, existingLoansCount: 3, annualIncome: 0 });
+    expect(result.rejectionCode).toBe(ErrorCode.TOO_MANY_ACTIVE_LOANS);
   });
 });

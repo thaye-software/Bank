@@ -62,6 +62,14 @@ export interface LoanRejection {
 
 export type LoanDecisionResult = LoanApproval | LoanRejection;
 
+
+interface EligibilityRule {
+  readonly id: string;
+  readonly check: (input: LoanApplicationInput) => boolean;
+  readonly code: ErrorCodeType;
+  readonly message: (input: LoanApplicationInput) => string;
+}
+
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
@@ -81,28 +89,90 @@ const EMPLOYMENT_MODIFIER: Readonly<Record<EmploymentStatus, number>> = {
   RETIRED:       RETIRED_RATE_MODIFIER,
 } as const;
 
+
+const ELIGIBILITY_RULES: readonly EligibilityRule[] = [
+  {
+    id: 'R1',
+    check: (i) => i.applicantAge >= MIN_AGE,
+    code: ErrorCode.APPLICANT_UNDERAGE,
+    message: () => `Applicant must be at least ${MIN_AGE} years old`,
+  },
+  {
+    id: 'R2',
+    check: (i) => i.kycStatus === 'VERIFIED',
+    code: ErrorCode.KYC_NOT_VERIFIED,
+    message: () => 'KYC verification is required before applying for a loan',
+  },
+  {
+    id: 'R3',
+    check: (i) => i.employmentStatus !== 'UNEMPLOYED',
+    code: ErrorCode.UNEMPLOYED_APPLICANT,
+    message: () => 'Unemployed applicants are not eligible for loans',
+  },
+  {
+    id: 'R4',
+    check: (i) => i.creditScore >= MIN_CREDIT_SCORE,
+    code: ErrorCode.CREDIT_SCORE_TOO_LOW,
+    message: () => `Minimum credit score is ${MIN_CREDIT_SCORE}`,
+  },
+  {
+    id: 'R5',
+    check: (i) => i.requestedAmount >= MIN_LOAN_AMOUNT,
+    code: ErrorCode.LOAN_AMOUNT_TOO_LOW,
+    message: () => `Minimum loan amount is $${MIN_LOAN_AMOUNT}`,
+  },
+  {
+    id: 'R6',
+    check: (i) => i.requestedAmount <= MAX_LOAN_AMOUNT,
+    code: ErrorCode.LOAN_AMOUNT_TOO_HIGH,
+    message: () => `Maximum loan amount is $${MAX_LOAN_AMOUNT}`,
+  },
+  {
+    id: 'R7',
+    check: (i) => VALID_TERMS.has(i.requestedTermMonths),
+    code: ErrorCode.INVALID_LOAN_TERM,
+    message: () => 'Loan term must be 12, 24, 36, 48, or 60 months',
+  },
+  {
+    id: 'R8',
+    check: (i) => i.existingLoansCount < MAX_ACTIVE_LOANS,
+    code: ErrorCode.TOO_MANY_ACTIVE_LOANS,
+    message: () => `Maximum of ${MAX_ACTIVE_LOANS} active loans allowed`,
+  },
+  {
+    id: 'R9',
+    check: (i) => i.annualIncome > 0,
+    code: ErrorCode.INVALID_INCOME,
+    message: () => 'Annual income must be greater than zero',
+  },
+];
+
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (exported for direct unit-testing)
 // ---------------------------------------------------------------------------
 
-/** Standard amortisation PMT formula. */
+
 export function pmt(annualRate: number, termMonths: number, principal: number): number {
+  if (termMonths <= 0) {
+    throw new RangeError(`pmt: termMonths must be > 0, got ${termMonths}`);
+  }
   const monthlyRate = annualRate / 12;
   if (monthlyRate === 0) return principal / termMonths;
   const factor = Math.pow(1 + monthlyRate, termMonths);
   return (monthlyRate * principal * factor) / (factor - 1);
 }
 
-function getCreditTier(creditScore: number): CreditScoreTier | null {
+export function getCreditTier(creditScore: number): CreditScoreTier | null {
   return CREDIT_TIERS.find((t) => creditScore >= t.min && creditScore <= t.max) ?? null;
 }
 
-function calculateApr(tier: CreditScoreTier, employmentStatus: EmploymentStatus): number {
+
+export function calculateApr(baseRate: number, employmentStatus: EmploymentStatus): number {
   const modifier = EMPLOYMENT_MODIFIER[employmentStatus] ?? 0;
-  return Math.min(tier.baseRate + modifier, MAX_APR);
+  return Math.min(baseRate + modifier, MAX_APR);
 }
 
-function calculateDti(
+export function calculateDti(
   monthlyDebt: number,
   annualIncome: number,
   apr: number,
@@ -128,41 +198,11 @@ function reject(
 export function evaluateLoanApplication(
   input: LoanApplicationInput,
 ): Result<LoanDecisionResult> {
-  // R1 — age
-  if (input.applicantAge < MIN_AGE) {
-    return reject(ErrorCode.APPLICANT_UNDERAGE, 'Applicant must be at least 18 years old');
-  }
-  // R2 — KYC
-  if (input.kycStatus !== 'VERIFIED') {
-    return reject(ErrorCode.KYC_NOT_VERIFIED, 'KYC verification is required before applying for a loan');
-  }
-  // R3 — employment
-  if (input.employmentStatus === 'UNEMPLOYED') {
-    return reject(ErrorCode.UNEMPLOYED_APPLICANT, 'Unemployed applicants are not eligible for loans');
-  }
-  // R4 — credit score
-  if (input.creditScore < MIN_CREDIT_SCORE) {
-    return reject(ErrorCode.CREDIT_SCORE_TOO_LOW, `Minimum credit score is ${MIN_CREDIT_SCORE}`);
-  }
-  // R5 — min amount
-  if (input.requestedAmount < MIN_LOAN_AMOUNT) {
-    return reject(ErrorCode.LOAN_AMOUNT_TOO_LOW, `Minimum loan amount is $${MIN_LOAN_AMOUNT}`);
-  }
-  // R6 — max amount
-  if (input.requestedAmount > MAX_LOAN_AMOUNT) {
-    return reject(ErrorCode.LOAN_AMOUNT_TOO_HIGH, `Maximum loan amount is $${MAX_LOAN_AMOUNT}`);
-  }
-  // R7 — term
-  if (!VALID_TERMS.has(input.requestedTermMonths)) {
-    return reject(ErrorCode.INVALID_LOAN_TERM, 'Loan term must be 12, 24, 36, 48, or 60 months');
-  }
-  // R8 — existing loans
-  if (input.existingLoansCount >= MAX_ACTIVE_LOANS) {
-    return reject(ErrorCode.TOO_MANY_ACTIVE_LOANS, `Maximum of ${MAX_ACTIVE_LOANS} active loans allowed`);
-  }
-  // R9 — income
-  if (input.annualIncome <= 0) {
-    return reject(ErrorCode.INVALID_INCOME, 'Annual income must be greater than zero');
+  // R1–R9 — data-driven rule chain, first failure wins
+  for (const rule of ELIGIBILITY_RULES) {
+    if (!rule.check(input)) {
+      return reject(rule.code, rule.message(input));
+    }
   }
 
   const tier = getCreditTier(input.creditScore);
@@ -170,7 +210,7 @@ export function evaluateLoanApplication(
     return reject(ErrorCode.CREDIT_SCORE_TOO_LOW, 'Credit score is outside eligible range');
   }
 
-  // Credit tier amount cap
+  // Credit-tier amount cap
   if (input.requestedAmount > tier.maxLoanAmount) {
     return reject(
       ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT,
@@ -178,7 +218,7 @@ export function evaluateLoanApplication(
     );
   }
 
-  const apr = calculateApr(tier, input.employmentStatus);
+  const apr = calculateApr(tier.baseRate, input.employmentStatus);
 
   const dti = calculateDti(
     input.monthlyDebt,

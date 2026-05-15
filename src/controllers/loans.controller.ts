@@ -1,32 +1,44 @@
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../middleware/validate.middleware';
 import { LoanRepository } from '../repositories/loan.repository';
 import { AccountRepository } from '../repositories/account.repository';
-import { NotFoundError } from '../shared/errors';
+import { NotFoundError, ValidationError } from '../shared/errors';
 import { evaluateLoanApplication } from '../domain/loans/loan.eligibility';
 import { runLoanAssessment } from '../domain/loans/loan.assessment.agent';
 import type { LoanApplicationInput } from '../domain/loans/loan.eligibility';
 import type { AppDeps } from '../app';
 
+
+const ApplyLoanSchema = z.object({
+  accountId: z.string().min(1, 'accountId is required'),
+  requestedAmount: z.number().finite().positive(),
+  requestedTermMonths: z.number().int().positive(),
+  annualIncome: z.number().finite().nonnegative(),
+  monthlyDebt: z.number().finite().nonnegative(),
+  creditScore: z.number().int().min(0).max(850),
+  employmentStatus: z.enum(['EMPLOYED', 'SELF_EMPLOYED', 'UNEMPLOYED', 'RETIRED']),
+  applicantAge: z.number().int().min(0).max(120),
+});
+
+type ApplyLoanBody = z.infer<typeof ApplyLoanSchema>;
+
 export function makeLoansController(deps: AppDeps) {
   const apply = asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as {
-      accountId: string;
-      requestedAmount: number;
-      requestedTermMonths: number;
-      annualIncome: number;
-      monthlyDebt: number;
-      creditScore: number;
-      employmentStatus: LoanApplicationInput['employmentStatus'];
-      applicantAge: number;
-    };
+    const parsed = ApplyLoanSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid loan application payload', parsed.error.flatten());
+    }
+    const body: ApplyLoanBody = parsed.data;
 
     const accountRepo = new AccountRepository(deps.db);
     const loanRepo = new LoanRepository(deps.db);
     const userId = req.user!.userId;
 
     const account = await accountRepo.findById(body.accountId);
-    if (!account || account.userId !== userId) throw new NotFoundError('Account', body.accountId);
+    if (!account || account.userId !== userId) {
+      throw new NotFoundError('Account', body.accountId);
+    }
 
     const existingLoansCount = await loanRepo.countActiveByUserId(userId);
 
@@ -38,7 +50,12 @@ export function makeLoansController(deps: AppDeps) {
       requestedTermMonths: body.requestedTermMonths,
       creditScore: body.creditScore,
       employmentStatus: body.employmentStatus,
-      kycStatus: req.user!.role === 'CUSTOMER' ? account.status === 'ACTIVE' ? 'VERIFIED' : 'NOT_STARTED' : 'VERIFIED',
+      kycStatus:
+        req.user!.role === 'CUSTOMER'
+          ? account.status === 'ACTIVE'
+            ? 'VERIFIED'
+            : 'NOT_STARTED'
+          : 'VERIFIED',
       existingLoansCount,
     };
 
