@@ -6,24 +6,8 @@ import {
 } from '../../../src/domain/accounts/account.rules';
 import { ErrorCode } from '../../../src/shared/errors';
 
-// ---------------------------------------------------------------------------
-// checkPostTransactionBalance — Minimum Balance Rules
-// ---------------------------------------------------------------------------
-// | Account Type | Minimum Balance |
-// | CHECKING     | $0.00           |
-// | SAVINGS      | $100.00         |
-// | BUSINESS     | $1,000.00       |
-//
-// Rules:
-//  • Minimum is enforced on the *post-transaction* balance.
-//  • Breaching the minimum returns err(BELOW_MINIMUM_BALANCE).
-//  • CHECKING with overdraftEnabled=true is exempt from the minimum and
-//    instead uses the overdraft limit — tested separately.
-// ---------------------------------------------------------------------------
 
 describe('checkPostTransactionBalance — minimum balance rules', () => {
-
-  // ── CHECKING ──────────────────────────────────────────────────────────────
 
   describe('CHECKING ($0 minimum, overdraft disabled)', () => {
     it('allows a withdrawal that brings balance to exactly $0', () => {
@@ -63,8 +47,6 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
       expect(MINIMUM_BALANCE.CHECKING.equals(new Decimal('0'))).toBe(true);
     });
   });
-
-  // ── SAVINGS ───────────────────────────────────────────────────────────────
 
   describe('SAVINGS ($100 minimum)', () => {
     it('allows a withdrawal that leaves balance at exactly $100', () => {
@@ -131,8 +113,6 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
     });
   });
 
-  // ── BUSINESS ──────────────────────────────────────────────────────────────
-
   describe('BUSINESS ($1,000 minimum)', () => {
     it('allows a withdrawal that leaves balance at exactly $1,000', () => {
       const result = checkPostTransactionBalance(
@@ -198,34 +178,7 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
     });
   });
 
-  // ── EQUIVALENCE PARTITIONING + BOUNDARY VALUE ANALYSIS ───────────────────
-  //
-  // Guard:  postBalance.lessThan(minimum)  — strict less-than
-  //
-  // Each account type has two partitions:
-  //   Valid   — post-balance ≥ minimum  → ok
-  //   Invalid — post-balance < minimum  → BELOW_MINIMUM_BALANCE
-  //
-  // Test cases per partition:
-  //   Valid:   lower boundary (minimum exactly), mean value, upper boundary
-  //   Invalid: upper boundary (minimum - $0.01), mean value, lower boundary
-  //
-  // ┌─────────────────┬───────────────────┬───────────┬──────────────────────┬──────────────────────────────┐
-  // │ Account Type    │ Partition         │ Mean      │ Boundary values      │ Test case values             │
-  // ├─────────────────┼───────────────────┼───────────┼──────────────────────┼──────────────────────────────┤
-  // │ CHECKING        │ Valid   [$0, ∞)   │ $5000     │ $0.00, $9999.99      │ $0.00, $5000, $9999.99       │
-  // │ (min = $0)      │ Invalid (-∞, -$0) │ -$5000    │ -$0.01, -$9999.99    │ -$0.01, -$5000, -$9999.99    │
-  // ├─────────────────┼───────────────────┼───────────┼──────────────────────┼──────────────────────────────┤
-  // │ SAVINGS         │ Valid   [$100, ∞) │ $5050     │ $100.00, $9999.99    │ $100.00, $5050, $9999.99     │
-  // │ (min = $100)    │ Invalid (-∞,$100) │ $50       │ $99.99, $0.01        │ $99.99, $50, $0.01           │
-  // ├─────────────────┼───────────────────┼───────────┼──────────────────────┼──────────────────────────────┤
-  // │ BUSINESS        │ Valid  [$1000, ∞) │ $5500     │ $1000.00, $9999.99   │ $1000.00, $5500, $9999.99    │
-  // │ (min = $1000)   │ Invalid (-∞,$999) │ $500      │ $999.99, $0.01       │ $999.99, $500, $0.01         │
-  // └─────────────────┴───────────────────┴───────────┴──────────────────────┴──────────────────────────────┘
-
   describe('equivalence partitioning + boundary value analysis', () => {
-
-    // ── CHECKING (minimum = $0.00) ──────────────────────────────────────────
 
     describe('CHECKING — valid partition: post-balance ≥ $0.00', () => {
       // Lower boundary
@@ -254,7 +207,7 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
     });
 
     describe('CHECKING — invalid partition: post-balance < $0.00', () => {
-      // Upper boundary of invalid range (closest to valid)
+
       it('post-balance -$0.01 (upper boundary of invalid) → BELOW_MINIMUM_BALANCE', () => {
         const result = checkPostTransactionBalance(
           new Decimal('100'), new Decimal('100.01'), 'CHECKING', false,
@@ -282,7 +235,6 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
       });
     });
 
-    // ── SAVINGS (minimum = $100.00) ─────────────────────────────────────────
 
     describe('SAVINGS — valid partition: post-balance ≥ $100.00', () => {
       // Lower boundary
@@ -422,6 +374,49 @@ describe('checkPostTransactionBalance — minimum balance rules', () => {
       if (!result.ok) {
         expect(result.error.code).toBe(ErrorCode.OVERDRAFT_LIMIT_REACHED);
       }
+    });
+  });
+
+   describe('CHECKING with overdraftEnabled=true — Full EP + BVA (overdraft limit -$500.00)', () => {
+
+    describe('Valid partition: post-balance ≥ -$500.00', () => {
+      it.each<[string, string, string]>([
+        // [label, currentBalance, amount]  → post-balance = currentBalance - amount
+        ['BV post-balance -$500.00 (lower boundary, at limit)',  '0',      '500'],
+        ['BV post-balance -$499.99 (just above lower boundary)', '0.01',   '500'],
+        ['EP post-balance -$250.00 (mean value)',                '250',    '500'],
+        ['BV post-balance -$0.01 (just below $0)',               '499.99', '500'],
+        ['BV post-balance $0.00',                                '500',    '500'],
+        ['BV post-balance $0.01 (just above $0)',                '500.01', '500'],
+      ])('%s → ok', (_label, balance, amount) => {
+        const result = checkPostTransactionBalance(
+          new Decimal(balance),
+          new Decimal(amount),
+          'CHECKING',
+          true,
+        );
+        expect(result.ok).toBe(true);
+      });
+    });
+
+    describe('Invalid partition: post-balance < -$500.00 (overdraft limit breached)', () => {
+      it.each<[string, string, string]>([
+        ['BV post-balance -$500.01 (upper boundary of invalid)', '0',        '500.01'],
+        ['BV post-balance -$500.02 (just below upper boundary)', '0',        '500.02'],
+        ['EP post-balance -$5,000.00 (mean value)',              '0',        '5000'],
+        ['BV post-balance MIN DECIMAL (deep negative)',          '0',        '1e30'],
+      ])('%s → OVERDRAFT_LIMIT_REACHED', (_label, balance, amount) => {
+        const result = checkPostTransactionBalance(
+          new Decimal(balance),
+          new Decimal(amount),
+          'CHECKING',
+          true,
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.code).toBe(ErrorCode.OVERDRAFT_LIMIT_REACHED);
+        }
+      });
     });
   });
 });
