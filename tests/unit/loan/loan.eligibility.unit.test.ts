@@ -271,8 +271,18 @@ describe('R6 — maximum loan amount', () => {
     expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
   });
 
-  it('accepts amount exactly at $500,000 (high credit score)', () => {
-    approved({ ...BASE_INPUT, requestedAmount: 500_000, creditScore: 800, annualIncome: 500_000, monthlyDebt: 0 });
+  it('accepts amount exactly at $500,000 (high credit score, 60-month term)', () => {
+    // Must use a 60-month term — a 24-month payoff of $500k at 5% APR is
+    // ~$21,936/mo, which against $500k income ($41,666/mo) lands at 52.6% DTI
+    // and trips DTI_TOO_HIGH. The 60-month payment drops to ~$9,435/mo (22.6% DTI).
+    approved({
+      ...BASE_INPUT,
+      requestedAmount: 500_000,
+      requestedTermMonths: 60,
+      creditScore: 800,
+      annualIncome: 500_000,
+      monthlyDebt: 0,
+    });
   });
 });
 
@@ -390,11 +400,13 @@ describe('DTI — debt-to-income ratio', () => {
   });
 
   it('rejects marginal DTI (>43%) combined with credit score below 650', () => {
+    // monthlyIncome = 3_000; loan payment ≈ $114; existing debt $1_250
+    // → (1_250 + 114) / 3_000 = 45.5% — squarely in the 43–50% marginal band.
     const result = rejected({
       ...BASE_INPUT,
       creditScore: 620,
       annualIncome: 36_000,
-      monthlyDebt: 1_100,
+      monthlyDebt: 1_250,
       requestedAmount: 5_000,
       requestedTermMonths: 60,
     });
@@ -406,7 +418,7 @@ describe('DTI — debt-to-income ratio', () => {
       ...BASE_INPUT,
       creditScore: 650,
       annualIncome: 36_000,
-      monthlyDebt: 1_100,
+      monthlyDebt: 1_250,
       requestedAmount: 5_000,
       requestedTermMonths: 60,
     });
