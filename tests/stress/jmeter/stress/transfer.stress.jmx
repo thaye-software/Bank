@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Transfer — Stress (distributed)" enabled="true">
+      <stringProp name="TestPlan.comments">Stress test: system-wide throughput on POST /api/v1/transactions/transfer.
+
+Each iteration debits a source account by $0.10 and credits a destination
+account. Pairs come from tests/stress/data/transfers.csv (1000 rows). The
+seed script pairs source[i] -&gt; dest[(i + SHIFT) % N] using SHIFT coprime
+with N, near N/2 (499 for N=1000). This guarantees:
+
+  - Every account is source of exactly ONE row and destination of exactly
+    ONE (different) row — no SELF_TRANSFER_NOT_ALLOWED rejections.
+  - Adjacent CSV rows share no accounts — neighbouring VUs in a
+    round-robin reader don't pile up on the same pair, so contention is
+    spread across the account graph rather than concentrated.
+
+This stress test isolates the system: Node event loop, Prisma connection
+pool, Postgres lock manager, network — whichever saturates first becomes
+the breaking point. Transfer is HEAVY compared to the read endpoint: it
+acquires FOR UPDATE on TWO accounts inside a $transaction, writes TWO
+transaction rows (TRANSFER_OUT + TRANSFER_IN), and runs the fraud
+detector. Expect the breaking point to arrive substantially earlier than
+the 650 VUs the read endpoint sustained.
+
+Shape (Stepping Thread Group) — sustained-capacity scan:
+  - Start at 2 VUs (initial burst)
+  - Add 2 VUs every 30s, ramp-up 1s per step
+  - Peak at 50 VUs (worst-case ramp ~12:30)
+  - Hold 120s at peak
+
+This is the THIRD stress shape attempt for transfer, and the rationale
+for the slow step is important:
+
+  Run 1 (+50/10s, cap 2000): clean to 300 VUs, 100% errors at 450 VUs.
+  Run 2 (+10/10s, cap 200):  clean to 60 VUs, 100% errors at 110 VUs.
+  Run 3 (this shape):        +2 VUs every 30s, cap 50, hold 120s.
+
+The wildly different boundaries from run 1 and run 2 — measured on
+identical clean state (run-stress.mjs reseeds + restarts every
+invocation) — proved that the TRANSIENT boundary (what +50/10s
+measures) is not the same as the SUSTAINED boundary (what longer
+holds measure). The transfer write path holds row locks inside a
+Prisma $transaction; under realistic-pacing concurrency the lock
+queue grows linearly over time, and once the queue grows past the
+default 5s transaction timeout, every request times out and the
+system collapses irreversibly.
+
+Run 2's "60 VUs clean" was a 10s observation — not long enough for
+the queue to compound. The transfer.load.jmx run that was sized to
+B=60 produced ~95% errors at 42 VUs (70% of 60) within the first
+30s of sustained load, confirming sustained capacity is far below
+the transient measurement.
+
+This stress run gives each VU level 30s of steady state to either
+stabilize or saturate. The first step where errors persist after
+the 30s settle window is the SUSTAINED boundary — the right number
+for load/spike planning.
+
+Step layout:
+  - Each step adds 2 VUs (vs +10 in run 2) for finer resolution at
+    the lower end where the boundary now lives
+  - 30s per step (vs 10s) so each level has time to expose lock-
+    queue accumulation, fraud-table growth, and connection-pool
+    state, rather than just thread-start jitter
+  - Cap 50 (vs 200): based on run 2's load-test outcome, sustained
+    capacity is well under 50; the cap is generous headroom
+
+Expected outcome: errors first appear somewhere in the low-double-
+digit VU range. Whatever VU level survives 30s with &lt;1% errors AND
+the next step breaks is the sustained boundary.
+
+Pass criteria: no 5xx, no timeouts, all responses are 2xx or 422.
+Breaking point: first step where p95 &gt; 5000ms OR error rate &gt; 1%.
+
+p95 is a report metric (Aggregate Report / HTML dashboard), not a
+per-sample assertion. The only per-sample gate is the response-code
+assertion — any HTTP failure or timeout counts toward the 1% error
+budget.
+
+Amount: $0.10 per transfer — deliberately below every business limit:
+  - Single transfer max: $50,000 ✓
+  - Daily transfer limit (CHECKING): $10,000  At ~600 req/s aggregate
+    across 1000 source accounts, each account sees ~0.6 transfers/s ×
+    60s = ~36 × $0.10 = $3.60 per minute, orders of magnitude under
+    the rolling-24h cap.
+  - Min: $0.01 ✓
+  - Fraud LARGE_AMOUNT_SINGLE ($&gt;3000): not triggered ✓
+  - Fraud OFFHOURS_LARGE ($&gt;1000): not triggered ✓
+  - Fraud RAPID_BALANCE_DRAIN (&gt;90% of balance): not triggered
+    ($0.10 / $1M = 1e-7) ✓
+  - Fraud NEW_ACCOUNT_LARGE ($&gt;500): not triggered ✓
+  - Fraud ROUND_AMOUNT (no cents): not triggered (0.10 has cents) ✓
+
+Fraud signals that WILL fire under sustained per-account velocity:
+  - VELOCITY_3_IN_5MIN (40 pts) after the 3rd debit per source in 5min
+  - VELOCITY_10_IN_1HR (30 pts) after the 10th debit per source in 1h
+  Total max: 70 pts → REVIEW_FLAGGED (allowed, status 200/201, just
+  flagged). Score never reaches the FRAUD_BLOCKED threshold of 100 at
+  these amounts. So fraud signals appear in the DB but do not cause
+  transaction failures.
+
+⚠ Weekend caveat (banking-rules §4): transfers initiated on Saturday or
+Sunday UTC are routed to PENDING_WEEKEND (status 201, queued for Monday
+09:00 UTC) and do NOT execute the full lock+update+insert path. If this
+test runs on Sat/Sun UTC, the response codes will be 201 (passing the
+assertion) but the throughput numbers measure the queuing path, not the
+real transfer path. Run on a weekday for meaningful numbers.
+
+Think time: a Gaussian Random Timer is attached to the sampler (mean
+3000ms, deviation 1000ms — total delay ≈ 3000ms + |N(0, 1000)| per
+iteration). Deliberate choice: the goal is to measure capacity under
+REALISTIC user pacing, not synthetic peak throughput. A no-think-time
+stress test models a DDoS-style attacker; with the timer this measures
+how many concurrent NORMAL users the system can sustain. Consistent
+with the read / withdraw / deposit stress plans.
+
+Load-generator memory: 50 JVM threads × ~1 MB stack each ≈ 50 MB at
+peak — trivial, well within the default JMeter heap (1 GB).
+
+Run headless from PROJECT ROOT:
+  jmeter -n -t tests/stress/jmeter/stress/transfer.stress.jmx \
+         -l tests/stress/reports/transfer.jtl \
+         -e -o tests/stress/reports/transfer-html
+
+Or via the wrapper script:
+  npm run test:stress:transfer
+
+Prereqs:
+  1. npx tsx tests/stress/scripts/seed.ts          (generates transfers.csv)
+  2. Server running on localhost:3000 (npm run build &amp;&amp; npm start)
+  3. JMeter Plugin: jpgc-casutg (Custom Thread Groups)</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="BASE_URL" elementType="Argument">
+            <stringProp name="Argument.name">BASE_URL</stringProp>
+            <stringProp name="Argument.value">${__P(host,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(port,3000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATA_DIR" elementType="Argument">
+            <stringProp name="Argument.name">DATA_DIR</stringProp>
+            <stringProp name="Argument.value">${__P(dataDir,tests/stress/data)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults">
+        <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+        <intProp name="HTTPSampler.response_timeout">15000</intProp>
+        <stringProp name="HTTPSampler.domain">${BASE_URL}</stringProp>
+        <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.implementation"></stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Content-Type</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Authorization</stringProp>
+            <stringProp name="Header.value">Bearer ${sourceToken}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="transfers.csv">
+        <stringProp name="filename">${DATA_DIR}/transfers.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">sourceAccountId,destinationAccountId,sourceUserId,sourceToken</stringProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+      </CSVDataSet>
+      <hashTree/>
+      <kg.apc.jmeter.threads.SteppingThreadGroup guiclass="kg.apc.jmeter.threads.SteppingThreadGroupGui" testclass="kg.apc.jmeter.threads.SteppingThreadGroup" testname="Stepping Thread Group — 2 burst, +2 every 30s, peak 50, hold 120s">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <stringProp name="ThreadGroup.num_threads">50</stringProp>
+        <stringProp name="Threads initial delay">0</stringProp>
+        <stringProp name="Start users count">2</stringProp>
+        <stringProp name="Start users count burst">2</stringProp>
+        <stringProp name="Start users period">30</stringProp>
+        <stringProp name="Stop users count">5</stringProp>
+        <stringProp name="Stop users period">2</stringProp>
+        <stringProp name="flighttime">120</stringProp>
+        <stringProp name="rampUp">1</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </kg.apc.jmeter.threads.SteppingThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/transfer">
+          <stringProp name="HTTPSampler.path">/api/v1/transactions/transfer</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;sourceAccountId&quot;:&quot;${sourceAccountId}&quot;,&quot;destinationAccountId&quot;:&quot;${destinationAccountId}&quot;,&quot;amount&quot;:&quot;0.10&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Server error or unexpected status — transfer flow broke under load.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+        <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report" enabled="true">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>false</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>false</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+              <sentBytes>true</sentBytes>
+              <url>true</url>
+              <threadCounts>true</threadCounts>
+              <idleTime>true</idleTime>
+              <connectTime>true</connectTime>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+        <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree (debug only — disable in CLI)" enabled="false">
+          <boolProp name="ResultCollector.error_logging">true</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>true</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>true</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
