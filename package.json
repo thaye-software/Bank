@@ -37,7 +37,10 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "test:stress:withdraw": "node tests/stress/scripts/run-stress.mjs",
-    "test:stress": "node tests/stress/scripts/run-stress.mjs"
+    "test:stress": "node tests/stress/scripts/run-stress.mjs",
+    "test:stress:deposit": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/stress/deposit-contention.stress.jmx",
+    "test:load:withdraw": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/withdraw.load.jmx",
+    "test:spike:withdraw": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/spike/withdraw.spike.jmx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

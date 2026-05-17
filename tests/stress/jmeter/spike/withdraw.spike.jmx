@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Withdraw — Spike (surge + recovery)" enabled="true">
+      <stringProp name="TestPlan.comments">Spike test: how does the system behave when load suddenly jumps to ~2x
+the safe capacity, and does it recover when the surge ends?
+
+  BOUNDARY      = 12 VUs   (last fully clean step in stress run)
+  70% BOUNDARY  =  8 VUs   (rounded; warm-up / recovery level)
+  SPIKE         = 24 VUs   (200% of boundary — chosen over 150% because
+                            150% ≈ 18 VUs is only 5 over the first-error
+                            point and would mostly replay the load test's
+                            boundary+1 phase. 200% is a genuine surge
+                            that should clearly degrade the system,
+                            making recovery a meaningful measurement.)
+
+Spike tests are NOT about finding the breaking point — the stress test
+already did that. They answer two specific questions:
+  1. Does the system stay up (no crash, no 5xx storm) during a sudden
+     surge well above its sustainable capacity?
+  2. When the surge ends, does it RECOVER — Prisma pool drains,
+     latency settles back, error rate returns to ~0% — or does it
+     stay degraded?
+
+Virtual users are spread across MANY distinct accounts (tests/stress/data/accounts.csv,
+1000 rows) via CSVDataSet round-robin (shareMode.all + recycle), so the
+per-row FOR UPDATE lock is NOT the bottleneck. We're measuring the system,
+not single-account contention.
+
+Shape (Ultimate Thread Group, 13:30 total):
+
+  ┌──────────────┬──────┬───────┬────────────────────────────────────────┐
+  │ Window       │ VUs  │ Hold  │ Maps to spec                           │
+  ├──────────────┼──────┼───────┼────────────────────────────────────────┤
+  │ 0:00–5:10    │   8  │  5 m  │ 70% of boundary       (warm-up)        │
+  │ 5:10–8:15    │  24  │  3 m  │ 200% of boundary      (THE SPIKE)      │
+  │ 8:15–13:20   │   8  │  5 m  │ 70% of boundary       (recovery)       │
+  └──────────────┴──────┴───────┴────────────────────────────────────────┘
+
+  Composition (UTG rows are additive):
+    Row 1 (baseline 8):  delay=0,   startup=10, hold=790, shutdown=10
+    Row 2 (spike +16):   delay=310, startup=5,  hold=180, shutdown=5
+
+  Resulting VU curve:
+    t=0..10    : ramp 0 → 8
+    t=10..310  : hold 8         ← warm-up (5 min)
+    t=310..315 : ramp 8 → 24    ← surge ramp (5s)
+    t=315..495 : hold 24        ← THE SPIKE (3 min)
+    t=495..500 : ramp 24 → 8    ← surge release (5s)
+    t=500..800 : hold 8         ← recovery observation (5 min)
+    t=800..810 : ramp 8 → 0
+
+Pass criteria:
+  - Warm-up:  p95 &lt; 5000ms, errors &lt; 1%   (same as load test)
+  - Spike:    NO 5xx, NO crash. Elevated p95 and 422/timeout errors are
+              EXPECTED here — the spike is intentionally above capacity.
+              The bar is &quot;degrades gracefully&quot;, not &quot;stays fast&quot;.
+  - Recovery: within ~60s of the spike ending, error rate returns to
+              &lt; 1% and p95 returns to its warm-up baseline. If errors
+              persist or latency stays elevated, the system did NOT
+              recover — that's the real finding.
+
+Response Assertion: assume_success=true — a 422 (legitimate business
+rejection like BELOW_MINIMUM_BALANCE) is a *successful* request from a
+spike-test perspective. Only timeouts, 5xx, and unexpected 4xx count as
+errors.
+
+Run headless from PROJECT ROOT:
+  jmeter -n -t tests/stress/jmeter/spike/withdraw.spike.jmx \
+         -l tests/stress/reports/withdraw-spike.jtl \
+         -e -o tests/stress/reports/withdraw-spike-html
+
+Or via the wrapper script:
+  npm run test:spike:withdraw
+
+Prereqs:
+  1. npx tsx tests/stress/scripts/seed.ts
+  2. Server running on localhost:3000 (npm run build &amp;&amp; npm start)
+  3. JMeter Plugin: jpgc-casutg (Custom Thread Groups)</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="BASE_URL" elementType="Argument">
+            <stringProp name="Argument.name">BASE_URL</stringProp>
+            <stringProp name="Argument.value">${__P(host,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(port,3000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATA_DIR" elementType="Argument">
+            <stringProp name="Argument.name">DATA_DIR</stringProp>
+            <stringProp name="Argument.value">${__P(dataDir,tests/stress/data)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults">
+        <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+        <intProp name="HTTPSampler.response_timeout">15000</intProp>
+        <stringProp name="HTTPSampler.domain">${BASE_URL}</stringProp>
+        <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.implementation"></stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Content-Type</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Authorization</stringProp>
+            <stringProp name="Header.value">Bearer ${token}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="accounts.csv">
+        <stringProp name="filename">${DATA_DIR}/accounts.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">accountId,userId,token</stringProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+      </CSVDataSet>
+      <hashTree/>
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="Ultimate Thread Group — 8 → 24 → 8 (13:30 total)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-baseline-8">
+            <stringProp name="utg-r1-threads">8</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">790</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-spike-plus-16">
+            <stringProp name="utg-r2-threads">16</stringProp>
+            <stringProp name="utg-r2-delay">310</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">180</stringProp>
+            <stringProp name="utg-r2-shutdown">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/withdraw">
+          <stringProp name="HTTPSampler.path">/api/v1/transactions/withdraw</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;accountId&quot;:&quot;${accountId}&quot;,&quot;amount&quot;:&quot;0.10&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422 (422 = legitimate business rejection)" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Server error or unexpected status — withdraw flow broke under spike.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">true</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+        <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report" enabled="true">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>false</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>false</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+              <sentBytes>true</sentBytes>
+              <url>true</url>
+              <threadCounts>true</threadCounts>
+              <idleTime>true</idleTime>
+              <connectTime>true</connectTime>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+        <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree (debug only — disable in CLI)" enabled="false">
+          <boolProp name="ResultCollector.error_logging">true</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>true</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>true</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
