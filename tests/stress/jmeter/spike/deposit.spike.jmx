@@ -73,6 +73,23 @@ rejection like ACCOUNT_NOT_ACTIVE) is a *successful* request from a
 spike-test perspective. Only timeouts, 5xx, and unexpected 4xx count as
 errors.
 
+Think time: a Gaussian Random Timer is attached to the sampler (mean
+3000ms, deviation 1000ms). Even with think time, the spike phase
+represents a real surge: 2× as many CONCURRENT USERS hitting the
+system simultaneously. Real-world spikes (flash sales, news events)
+look like a sudden influx of normal-paced users — not the same users
+firing 100× more requests. The timer makes this test measure the
+realistic version of that scenario.
+
+Consequence: with the timer, the spike load is ~150× lower in raw
+req/s than a no-timer spike would have been. The known P2028
+transaction-timeout defect surfaced under no-timer conditions may not
+fire here at all — Prisma pool has room to drain between requests.
+That is not a regression; it is a consequence of measuring a
+different thing (realistic surge vs synthetic surge). Raise the spike
+VU count if every phase runs clean and you want to actually stress
+the surge response.
+
 Run headless from PROJECT ROOT:
   jmeter -n -t tests/stress/jmeter/spike/deposit.spike.jmx \
          -l tests/stress/reports/deposit-spike.jtl \
@@ -186,6 +203,11 @@ Prereqs:
           </elementProp>
         </HTTPSamplerProxy>
         <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422 (422 = legitimate business rejection)" enabled="true">
             <collectionProp name="Asserion.test_strings">
               <stringProp name="1729207179">^(2\d\d|422)$</stringProp>

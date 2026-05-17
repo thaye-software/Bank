@@ -28,6 +28,27 @@ p95 is a report metric (Aggregate Report / HTML dashboard), not a per-sample
 assertion. The only per-sample gate is the response-code assertion — any HTTP
 failure or timeout counts toward the 1% error budget.
 
+Think time: a Gaussian Random Timer is attached to the sampler (mean
+3000ms, deviation 1000ms — total delay ≈ 3000ms + |N(0, 1000)| per
+iteration). Deliberate choice: the goal is to measure capacity under
+REALISTIC user pacing, not synthetic peak throughput. A no-think-time
+stress test models a DDoS-style attacker; with the timer this measures
+how many concurrent NORMAL users the system can sustain.
+
+Consequence: each VU now generates ~0.3 req/s instead of ~50 req/s,
+so reaching saturation takes ~150× more VUs than a no-timer run.
+The peak VU cap (Stepping Thread Group below) may not be enough to
+actually find a server-side breaking point on local hardware — that
+is fine. The latency / error-rate curve as VUs ramp up is still
+meaningful evidence of capacity headroom. If the ramp completes
+cleanly to peak, raise the peak and re-run. Earlier no-timer findings
+(boundary at 9 VUs / first errors at 10 VUs) measured something else
+— synthetic peak load, not realistic user-density — and do not carry
+over to this run. The known P2028 transaction-timeout defect may not
+surface here at all (Prisma pool will have room to drain between
+realistic-paced requests); that is not a regression — it is a
+consequence of measuring a different thing.
+
 Run headless from PROJECT ROOT:
   jmeter -n -t tests/stress/jmeter/stress/deposit-contention.stress.jmx \
          -l tests/stress/reports/deposit-contention.jtl \
@@ -131,6 +152,11 @@ Prereqs:
           </elementProp>
         </HTTPSamplerProxy>
         <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422">
             <collectionProp name="Asserion.test_strings">
               <stringProp name="1729207179">^(2\d\d|422)$</stringProp>

@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Account Read — Load (stepped capacity verification)" enabled="true">
+      <stringProp name="TestPlan.comments">Load test: verify the capacity BOUNDARY discovered by the account-read
+stress test holds under sustained load — not just a 30s rolling window.
+
+╔══════════════════════════════════════════════════════════════════════╗
+║ BOUNDARY (from realistic-pacing stress run): 650 VUs                 ║
+║                                                                      ║
+║   BOUNDARY      = 650 VUs   (last fully clean step in the timer-     ║
+║                              enabled stress run; errors first        ║
+║                              appeared above 650)                     ║
+║   70% BOUNDARY  = 455 VUs   (warm-up / recovery level)               ║
+║                                                                      ║
+║ At this scale the conventional ±1 VU steps (B-1, B+1) are            ║
+║ statistically indistinguishable, so the plan uses ±~5% brackets      ║
+║ instead — equivalent in relative terms to the ±1 VU spacing in the   ║
+║ withdraw load plan (where ±1 ≈ 8% of B=12):                          ║
+║                                                                      ║
+║   warm-up         = 455 VUs   ( 70% — same as recovery)              ║
+║   just-under      = 620 VUs   (~95% — confirms approach is stable)   ║
+║   at boundary     = 650 VUs   (100% — the 10-min hold)               ║
+║   just-over       = 680 VUs   (~105% — should start to crack)        ║
+║   recovery        = 455 VUs   ( 70%)                                 ║
+║                                                                      ║
+║ The earlier 3-5 VU "boundary" measured without the Gaussian timer    ║
+║ was a load-generator artefact (Windows ephemeral-port exhaustion at  ║
+║ high connection churn for fast reads). With the timer applied in     ║
+║ the new stress run, the true realistic-pacing server capacity is     ║
+║ two orders of magnitude higher.                                      ║
+║                                                                      ║
+║ ⚠ Load-generator memory: 680 JVM threads × ~1 MB stack each ≈        ║
+║ ~700 MB heap just for thread stacks at peak. Default JMeter heap     ║
+║ (1 GB) should hold but consider setting HEAP="-Xms1g -Xmx2g"         ║
+║ before running to be safe.                                           ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+This is a HYBRID load test — a stepped capacity scan with recovery — not a
+single-level steady-state load test. Each step holds long enough to expose
+slow degradation (connection accumulation, pool starvation, memory creep).
+
+Virtual users are spread across MANY distinct accounts (tests/stress/data/accounts.csv,
+1000 rows) via CSVDataSet round-robin (shareMode.all + recycle), so single-row
+read contention is NOT a factor. We're measuring the system, not single-account
+behaviour.
+
+This exercises the READ path: plain SELECT, no FOR UPDATE, no $transaction,
+no transactions-table write. Postgres query cache and Prisma connection pool
+are the most likely saturation points.
+
+Shape (Ultimate Thread Group, 28 min total):
+
+  ┌──────────────┬──────┬───────┬─────────────────────────────────┐
+  │ Window       │ VUs  │ Hold  │ Maps to spec                    │
+  ├──────────────┼──────┼───────┼─────────────────────────────────┤
+  │ 0–5 min      │  455 │  5 m  │ 70% of boundary    (warm-up)    │
+  │ 5–10 min     │  620 │  5 m  │ ~95% of boundary   (just under) │
+  │ 10–20 min    │  650 │ 10 m  │ boundary           (at boundary)│
+  │ 20–25 min    │  680 │  5 m  │ ~105% of boundary  (just over)  │
+  │ 25–28 min    │  455 │  3 m  │ 70% of boundary    (recovery)   │
+  └──────────────┴──────┴───────┴─────────────────────────────────┘
+
+Pass criteria per phase (same gates as stress):
+  - p95 latency &lt; 5000ms
+  - error rate &lt; 1%
+
+Response Assertion: assume_success=true — for the read endpoint there is
+NO 422 path (a read either succeeds with 200 or fails — see below). The
+assertion still requires exactly 200, so any 403 / 404 / 5xx / timeout
+counts as an error. assume_success=true means only assertion failures and
+client/transport errors (BindException, connect timeout) count toward the
+1% budget; a missed assertion still counts. This is consistent with the
+withdraw / deposit load plans.
+
+Think time: a Gaussian Random Timer is attached to the sampler (mean
+3000ms, deviation 1000ms — total delay ≈ 3000ms + |N(0, 1000)| per
+iteration). This models realistic user pacing: a customer opens the app,
+checks their balance, then continues. Without it each VU would loop as
+fast as the server replies (potentially 100+ req/s for a fast read),
+which is a saturation pattern, not a load pattern.
+
+Consequence for VU counts: the boundary VU number above was measured
+*without* think time. With the timer, each VU now contributes ~0.3
+req/s. So this load run no longer reproduces the stress-run throughput
+at the same VU count — it measures whether the system stays healthy
+under sustained *realistic* concurrency, not under saturating load.
+
+⚠ Windows load-generator caveat: at the 680-VU just-over phase the
+aggregate request rate is ~204 req/s (680 × 0.3 req/s) — above the
+~68 conn/s ephemeral-port ceiling. HTTP keepalive (enabled on the
+sampler) means JMeter reuses connections rather than opening one per
+request, so the actual TCP-connection-open rate stays well under that;
+exact figure depends on the server's keepalive behaviour. If
+BindException starts appearing in the JTL during the just-over phase,
+that's a load-generator finding, not a server finding. Apply the
+netsh / TcpTimedWaitDelay tweak from tests/stress/RESULTS.md §6 / E-1
+to confirm.
+
+Run headless from PROJECT ROOT:
+  jmeter -n -t tests/stress/jmeter/load/account-read.load.jmx \
+         -l tests/stress/reports/account-read-load.jtl \
+         -e -o tests/stress/reports/account-read-load-html
+
+Or via the wrapper script:
+  npm run test:load:account-read
+
+Prereqs:
+  1. npx tsx tests/stress/scripts/seed.ts
+  2. Server running on localhost:3000 (npm run build &amp;&amp; npm start)
+  3. JMeter Plugin: jpgc-casutg (Custom Thread Groups)</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="BASE_URL" elementType="Argument">
+            <stringProp name="Argument.name">BASE_URL</stringProp>
+            <stringProp name="Argument.value">${__P(host,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(port,3000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATA_DIR" elementType="Argument">
+            <stringProp name="Argument.name">DATA_DIR</stringProp>
+            <stringProp name="Argument.value">${__P(dataDir,tests/stress/data)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults">
+        <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+        <intProp name="HTTPSampler.response_timeout">15000</intProp>
+        <stringProp name="HTTPSampler.domain">${BASE_URL}</stringProp>
+        <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.implementation"></stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Content-Type</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Authorization</stringProp>
+            <stringProp name="Header.value">Bearer ${token}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="accounts.csv">
+        <stringProp name="filename">${DATA_DIR}/accounts.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">accountId,userId,token</stringProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+      </CSVDataSet>
+      <hashTree/>
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="Ultimate Thread Group — 455 → 620 → 650 → 680 → 455 (28 min)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-baseline-455">
+            <stringProp name="utg-r1-threads">455</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">1670</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-step-620">
+            <stringProp name="utg-r2-threads">165</stringProp>
+            <stringProp name="utg-r2-delay">300</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">295</stringProp>
+            <stringProp name="utg-r2-shutdown">0</stringProp>
+          </collectionProp>
+          <collectionProp name="row-step-650">
+            <stringProp name="utg-r3-threads">195</stringProp>
+            <stringProp name="utg-r3-delay">600</stringProp>
+            <stringProp name="utg-r3-startup">1</stringProp>
+            <stringProp name="utg-r3-hold">599</stringProp>
+            <stringProp name="utg-r3-shutdown">0</stringProp>
+          </collectionProp>
+          <collectionProp name="row-step-680">
+            <stringProp name="utg-r4-threads">225</stringProp>
+            <stringProp name="utg-r4-delay">1200</stringProp>
+            <stringProp name="utg-r4-startup">1</stringProp>
+            <stringProp name="utg-r4-hold">299</stringProp>
+            <stringProp name="utg-r4-shutdown">0</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/v1/accounts/${accountId}">
+          <stringProp name="HTTPSampler.path">/api/v1/accounts/${accountId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Server error or unexpected status — account read broke under load (403/404 implies a fixture error in accounts.csv, not load behaviour).</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">true</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+        <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report" enabled="true">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>false</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>false</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+              <sentBytes>true</sentBytes>
+              <url>true</url>
+              <threadCounts>true</threadCounts>
+              <idleTime>true</idleTime>
+              <connectTime>true</connectTime>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+        <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree (debug only — disable in CLI)" enabled="false">
+          <boolProp name="ResultCollector.error_logging">true</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>true</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>true</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

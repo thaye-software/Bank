@@ -1,27 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Withdraw — Stress (distributed)" enabled="true">
-      <stringProp name="TestPlan.comments">Stress test: system-wide throughput on POST /api/v1/transactions/withdraw.
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Account Read — Stress (distributed)" enabled="true">
+      <stringProp name="TestPlan.comments">Stress test: system-wide throughput on GET /api/v1/accounts/:id.
 
 Virtual users are spread across MANY distinct accounts (tests/stress/data/accounts.csv,
 1000 rows). Each VU iteration picks the next account via CSVDataSet round-robin
-(shareMode.all + recycle), so the per-row FOR UPDATE lock is NOT the bottleneck.
+(shareMode.all + recycle), so single-row read contention is NOT a factor.
 This isolates the system as a whole: Node event loop, Prisma connection pool,
-Postgres, network — whichever saturates first becomes the breaking point.
+Postgres query cache, network — whichever saturates first becomes the
+breaking point.
+
+Unlike the withdraw / deposit stress runs, this exercises the READ path:
+  - No FOR UPDATE row lock (plain SELECT)
+  - No $transaction interactive block
+  - No write to the transactions table
+  - Response payload is small and bounded
+
+This is the lightest endpoint in the system, so the breaking point should
+sit substantially higher than the write endpoints (withdraw 12 VUs, deposit
+9 VUs from earlier runs). The interesting question is WHICH layer breaks
+first when the write paths can no longer be the bottleneck.
 
 Shape (Stepping Thread Group):
-  - Start at 1 VU
-  - Add 1 VU every 10s, ramp-up 1s per step
-  - Peak at 200 VUs (worst-case ramp ~33 min — breaking point typically arrives first)
+  - Start at 50 VUs (initial burst)
+  - Add 50 VUs every 10s, ramp-up 1s per step
+  - Peak at 2000 VUs (worst-case ramp ~6.5 min — breaking point typically arrives first)
   - Hold 60s at peak (only reached if system never broke)
 
-Pass criteria: no 5xx, no timeouts, all responses are 200 or 422.
+Peak raised to 2000 VUs to find the realistic-pacing capacity ceiling
+that 200 VUs failed to reveal. With the Gaussian timer each VU
+generates ~0.3 req/s, so 2000 VUs aggregate to ~600 req/s — well
+above the regime where Node event loop / Prisma pool behaviour
+becomes observable. HTTP keepalive (enabled on the sampler) means
+2000 concurrent VUs do NOT require 2000 ephemeral ports
+simultaneously; the Windows BindException ceiling is unlikely to
+fire as long as keepalive is honoured by the server.
+
+Bursting 50 VUs at a time (instead of 1) keeps the ramp tractable —
+200 single-VU steps × 10s would be 33 min just to reach peak.
+40 × 50-VU steps × 10s = ~6:40 ramp + 60s hold + ~80s shutdown
+= ~9 min total run. Shutdown burst (Stop users count) raised
+symmetrically to 50 to avoid the otherwise absurd 4000s drain.
+
+⚠ Load-generator memory: 2000 JVM threads at ~1 MB stack each is
+~2 GB JMeter heap just for thread stacks. If JMeter starts swapping
+or OOMs during the ramp, drop the peak (or invest the netsh / VU
+tuning effort to drive higher load with fewer threads).
+
+Pass criteria: no 5xx, no timeouts, all responses are 200.
 Breaking point: first step where p95 &gt; 5000ms OR error rate &gt; 1%.
 
 p95 is a report metric (Aggregate Report / HTML dashboard), not a per-sample
 assertion. The only per-sample gate is the response-code assertion — any HTTP
 failure or timeout counts toward the 1% error budget.
+
+⚠ Windows load-generator caveat:
+A GET account read is expected to return in &lt; 10 ms warm. At that latency
+each VU can drive ~100 req/s, meaning even 10–15 VUs can push connection
+churn past the Windows ephemeral-port ceiling (~68 conn/s with default
+49152–65535 / 240s TIME_WAIT). If this run starts reporting
+java.net.BindException before any p95 / 5xx breach, the breaking point
+observed is the LOAD GENERATOR, not the server. See tests/stress/RESULTS.md
+section 6 / E-1 for the Windows tuning fix
+(`netsh int ipv4 set dynamicport tcp start=10000 num=55535` +
+TcpTimedWaitDelay=30). Apply that before drawing conclusions about
+server capacity from this run.
+
+The response assertion is 200-only — there is no 422 path on a read.
+A 403 (token / account mismatch) or 404 (missing account) would indicate
+a data-fixture error in accounts.csv, not load behaviour, and must count
+as a failure.
 
 Think time: a Gaussian Random Timer is attached to the sampler (mean
 3000ms, deviation 1000ms — total delay ≈ 3000ms + |N(0, 1000)| per
@@ -30,21 +79,22 @@ REALISTIC user pacing, not synthetic peak throughput. A no-think-time
 stress test models a DDoS-style attacker; with the timer this measures
 how many concurrent NORMAL users the system can sustain.
 
-Consequence: each VU now generates ~0.3 req/s instead of ~50 req/s,
-so reaching saturation takes ~150× more VUs than a no-timer run.
-The peak VU cap (Stepping Thread Group below) may not be enough to
-actually find a server-side breaking point on local hardware — that
-is fine. The latency / error-rate curve as VUs ramp up is still
-meaningful evidence of capacity headroom. If the ramp completes
-cleanly to peak, raise the peak and re-run. Earlier no-timer findings
-(boundary at 12 VUs / first errors at 13 VUs) measured something else
-— synthetic peak load, not realistic user-density — and do not carry
-over to this run.
+Consequence: each VU now generates ~0.3 req/s instead of ~100+ req/s
+for fast reads. The BindException risk discussed above effectively
+disappears (50 VUs × 0.3 req/s = 15 req/s — well under the ~68 conn/s
+Windows ceiling). The earlier 3-5 VU no-timer "boundary" was almost
+certainly load-generator-limited, not server-limited; this run should
+walk cleanly to its peak. If the ramp completes without breaking,
+raise the peak and re-run to actually find the realistic-pacing
+capacity ceiling.
 
 Run headless from PROJECT ROOT:
-  jmeter -n -t tests/stress/jmeter/stress/withdraw-contention.stress.jmx \
-         -l tests/stress/reports/withdraw-contention.jtl \
-         -e -o tests/stress/reports/withdraw-contention-html
+  jmeter -n -t tests/stress/jmeter/stress/account-read.stress.jmx \
+         -l tests/stress/reports/account-read.jtl \
+         -e -o tests/stress/reports/account-read-html
+
+Or via the wrapper script:
+  npm run test:stress:account-read
 
 Prereqs:
   1. npx tsx tests/stress/scripts/seed.ts
@@ -111,14 +161,14 @@ Prereqs:
         <boolProp name="ignoreFirstLine">true</boolProp>
       </CSVDataSet>
       <hashTree/>
-      <kg.apc.jmeter.threads.SteppingThreadGroup guiclass="kg.apc.jmeter.threads.SteppingThreadGroupGui" testclass="kg.apc.jmeter.threads.SteppingThreadGroup" testname="Stepping Thread Group — 1 burst, +1 every 10s, peak 200, hold 60s">
+      <kg.apc.jmeter.threads.SteppingThreadGroup guiclass="kg.apc.jmeter.threads.SteppingThreadGroupGui" testclass="kg.apc.jmeter.threads.SteppingThreadGroup" testname="Stepping Thread Group — 50 burst, +50 every 10s, peak 2000, hold 60s">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
-        <stringProp name="ThreadGroup.num_threads">200</stringProp>
+        <stringProp name="ThreadGroup.num_threads">2000</stringProp>
         <stringProp name="Threads initial delay">0</stringProp>
-        <stringProp name="Start users count">1</stringProp>
-        <stringProp name="Start users count burst">1</stringProp>
+        <stringProp name="Start users count">50</stringProp>
+        <stringProp name="Start users count burst">50</stringProp>
         <stringProp name="Start users period">10</stringProp>
-        <stringProp name="Stop users count">1</stringProp>
+        <stringProp name="Stop users count">50</stringProp>
         <stringProp name="Stop users period">2</stringProp>
         <stringProp name="flighttime">60</stringProp>
         <stringProp name="rampUp">1</stringProp>
@@ -128,19 +178,13 @@ Prereqs:
         </elementProp>
       </kg.apc.jmeter.threads.SteppingThreadGroup>
       <hashTree>
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/withdraw">
-          <stringProp name="HTTPSampler.path">/api/v1/transactions/withdraw</stringProp>
-          <stringProp name="HTTPSampler.method">POST</stringProp>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/v1/accounts/${accountId}">
+          <stringProp name="HTTPSampler.path">/api/v1/accounts/${accountId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
-          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
-            <collectionProp name="Arguments.arguments">
-              <elementProp name="" elementType="HTTPArgument">
-                <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{&quot;accountId&quot;:&quot;${accountId}&quot;,&quot;amount&quot;:&quot;0.10&quot;}</stringProp>
-                <stringProp name="Argument.metadata">=</stringProp>
-              </elementProp>
-            </collectionProp>
+            <collectionProp name="Arguments.arguments"/>
           </elementProp>
         </HTTPSamplerProxy>
         <hashTree>
@@ -149,14 +193,14 @@ Prereqs:
             <stringProp name="RandomTimer.range">1000.0</stringProp>
           </GaussianRandomTimer>
           <hashTree/>
-          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422" enabled="true">
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 200" enabled="true">
             <collectionProp name="Asserion.test_strings">
-              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+              <stringProp name="49586">200</stringProp>
             </collectionProp>
-            <stringProp name="Assertion.custom_message">Server error or unexpected status — withdraw flow broke under load.</stringProp>
+            <stringProp name="Assertion.custom_message">Server error or unexpected status — account read broke under load (403/404 implies a fixture error in accounts.csv, not load behaviour).</stringProp>
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
-            <intProp name="Assertion.test_type">1</intProp>
+            <intProp name="Assertion.test_type">8</intProp>
           </ResponseAssertion>
           <hashTree/>
         </hashTree>
