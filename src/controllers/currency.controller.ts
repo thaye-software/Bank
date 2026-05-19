@@ -72,10 +72,10 @@ export function makeCurrencyController(deps: AppDeps) {
       data: {
         fromCurrency: body.fromCurrency,
         toCurrency: body.toCurrency,
-        originalAmount: amount,
-        convertedAmount,
-        fee,
-        exchangeRate,
+        originalAmount: amount.toNumber(),
+        convertedAmount: convertedAmount.toNumber(),
+        fee: fee.toNumber(),
+        exchangeRate: exchangeRate.toNumber(),
         stale,
       },
     });
