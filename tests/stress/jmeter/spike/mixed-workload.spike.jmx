@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Mixed Workload — Spike (recovery test)" enabled="true">
+      <stringProp name="TestPlan.comments">Spike test for the mixed-workload boundary. Surge all four endpoints
+from 70% baseline to 200% spike simultaneously, hold 3 min, then drop
+back to 70% to observe whether the system recovers cleanly when load
+returns to baseline across the full traffic mix.
+
+╔══════════════════════════════════════════════════════════════════════╗
+║ BOUNDARY (from mixed-workload stress run): 182 total VUs             ║
+║                                                                      ║
+║   Composition (10:1:1:2 ratio):                                      ║
+║                                                                      ║
+║   Endpoint        Boundary  Baseline 70%  Spike 200%                 ║
+║   ──────────────────────────────────────────────────                 ║
+║   Account read   130        91            260                        ║
+║   Deposit         13         9             26                        ║
+║   Withdraw        13         9             26                        ║
+║   Transfer        26        18             52                        ║
+║   ──────────────────────────────────────────────────                 ║
+║   Total          182        127           364                        ║
+║                                                                      ║
+║ Sized at 200% (not 150%) on the same rationale as the per-endpoint   ║
+║ spike plans: 150% (273) would just replay the load test's just-over  ║
+║ zone, not test true surge. 200% (364) is well into the catastrophic  ║
+║ regime — the stress run showed 17% error rate at 280 total VUs and   ║
+║ rising. At 364 VUs every write endpoint is multiple times past its   ║
+║ isolated boundary; the spike phase EXPECTS heavy errors. The         ║
+║ question is whether the system DEGRADES GRACEFULLY (returns proper   ║
+║ 5xx, keeps the event loop responsive) and RECOVERS to baseline       ║
+║ once the spike ends.                                                 ║
+║                                                                      ║
+║ Recovery is the headline metric. The transfer write path is the      ║
+║ slowest to release Postgres row locks; if those leak past the        ║
+║ spike, the recovery phase will show elevated p95 / errors at the     ║
+║ same 127 VU total that ran clean before the spike.                   ║
+║                                                                      ║
+║ Load-generator memory: 364 JVM threads × ~1 MB stack each ≈ 364 MB   ║
+║ peak. Default JMeter heap (1 GB) is plenty.                          ║
+║                                                                      ║
+║ Spike ramp rate: +237 total threads over 5s ≈ 47 threads/s. JMeter   ║
+║ handles this comfortably; no ramp jitter risk at this scale.         ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Shape (4 concurrent Ultimate Thread Groups, synchronized, 13:30 total):
+
+  ┌──────────────┬─────────────┬───────┬─────────────────────────┐
+  │ Window       │ Total VUs   │ Hold  │ Maps to spec            │
+  ├──────────────┼─────────────┼───────┼─────────────────────────┤
+  │ 0–5 min      │ 127         │  5 m  │ 70%  (warm-up)          │
+  │ 5–8 min      │ 364         │  3 m  │ 200% (the SPIKE)        │
+  │ 8–13:30 min  │ 127         │  5 m  │ 70%  (recovery)         │
+  └──────────────┴─────────────┴───────┴─────────────────────────┘
+
+Pass criteria:
+  - During warm-up and recovery: per-endpoint p95 and error rate
+    matching the load-plan SLAs:
+      Read   :  p95 &lt; 200ms,  errors &lt; 1%
+      Deposit:  p95 &lt; 5000ms, errors &lt; 5%
+      Withdraw: p95 &lt; 5000ms, errors &lt; 5%
+      Transfer: p95 &lt; 5000ms, errors &lt; 10%
+  - During the spike: elevated errors and latency are acceptable —
+    measure GRACEFUL DEGRADATION (proper 5xx, no event-loop stall)
+    and FULL RECOVERY to baseline SLA once the spike ends.
+
+A spike that leaves the system degraded after VUs drop back to 127
+is a failure even if the spike phase itself returned proper 5xx codes.
+
+Response Assertions (per TG):
+  - Read     : exactly 200
+  - Deposit  : ^(2\d\d|422)$
+  - Withdraw : ^(2\d\d|422)$
+  - Transfer : ^(2\d\d|422)$
+
+Think time: Gaussian Random Timer on each TG (mean 3s, σ 1s).
+
+Amounts:
+  - Deposit:  $100.00
+  - Withdraw: $50.25  (non-round, &lt;$3k)
+  - Transfer: $0.10
+
+⚠ Weekend caveat: transfer TG bypasses lock+update+insert on Sat/Sun
+UTC. Run on a weekday for meaningful recovery measurement.
+
+Run headless from PROJECT ROOT:
+  jmeter -n -t tests/stress/jmeter/spike/mixed-workload.spike.jmx \
+         -l tests/stress/reports/mixed-workload-spike.jtl \
+         -e -o tests/stress/reports/mixed-workload-spike-html
+
+Or via the wrapper script:
+  npm run test:spike:mixed
+
+Prereqs:
+  1. npx tsx tests/stress/scripts/seed.ts
+  2. Server running on localhost:3000 (npm run build &amp;&amp; npm start)
+  3. JMeter Plugin: jpgc-casutg (Custom Thread Groups)</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="BASE_URL" elementType="Argument">
+            <stringProp name="Argument.name">BASE_URL</stringProp>
+            <stringProp name="Argument.value">${__P(host,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(port,3000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATA_DIR" elementType="Argument">
+            <stringProp name="Argument.name">DATA_DIR</stringProp>
+            <stringProp name="Argument.value">${__P(dataDir,tests/stress/data)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults">
+        <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+        <intProp name="HTTPSampler.response_timeout">15000</intProp>
+        <stringProp name="HTTPSampler.domain">${BASE_URL}</stringProp>
+        <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.implementation"></stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- =============================================================== -->
+      <!-- TG 1: Account Read — 91 → 260 → 91                              -->
+      <!-- =============================================================== -->
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="TG — Account Read (91 → 260 → 91)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-read-baseline-91">
+            <stringProp name="utg-r1-threads">91</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">790</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-read-spike-260">
+            <stringProp name="utg-r2-threads">169</stringProp>
+            <stringProp name="utg-r2-delay">310</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">180</stringProp>
+            <stringProp name="utg-r2-shutdown">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="accounts.csv (read)">
+          <stringProp name="filename">${DATA_DIR}/accounts.csv</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">readAccountId,readUserId,readToken</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.group</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Headers (read)">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${readToken}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/v1/accounts/:id">
+          <stringProp name="HTTPSampler.path">/api/v1/accounts/${readAccountId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Read failed under mixed spike.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+
+      <!-- =============================================================== -->
+      <!-- TG 2: Deposit — 9 → 26 → 9                                       -->
+      <!-- =============================================================== -->
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="TG — Deposit (9 → 26 → 9)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-deposit-baseline-9">
+            <stringProp name="utg-r1-threads">9</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">790</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-deposit-spike-26">
+            <stringProp name="utg-r2-threads">17</stringProp>
+            <stringProp name="utg-r2-delay">310</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">180</stringProp>
+            <stringProp name="utg-r2-shutdown">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="accounts.csv (deposit)">
+          <stringProp name="filename">${DATA_DIR}/accounts.csv</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">depositAccountId,depositUserId,depositToken</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.group</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Headers (deposit)">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${depositToken}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/deposit">
+          <stringProp name="HTTPSampler.path">/api/v1/transactions/deposit</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;accountId&quot;:&quot;${depositAccountId}&quot;,&quot;amount&quot;:&quot;100.00&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Deposit failed under mixed spike.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+
+      <!-- =============================================================== -->
+      <!-- TG 3: Withdraw — 9 → 26 → 9                                      -->
+      <!-- =============================================================== -->
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="TG — Withdraw (9 → 26 → 9)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-withdraw-baseline-9">
+            <stringProp name="utg-r1-threads">9</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">790</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-withdraw-spike-26">
+            <stringProp name="utg-r2-threads">17</stringProp>
+            <stringProp name="utg-r2-delay">310</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">180</stringProp>
+            <stringProp name="utg-r2-shutdown">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="accounts.csv (withdraw)">
+          <stringProp name="filename">${DATA_DIR}/accounts.csv</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">withdrawAccountId,withdrawUserId,withdrawToken</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.group</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Headers (withdraw)">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${withdrawToken}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/withdraw">
+          <stringProp name="HTTPSampler.path">/api/v1/transactions/withdraw</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;accountId&quot;:&quot;${withdrawAccountId}&quot;,&quot;amount&quot;:&quot;50.25&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Withdraw failed under mixed spike.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+
+      <!-- =============================================================== -->
+      <!-- TG 4: Transfer — 18 → 52 → 18                                    -->
+      <!-- =============================================================== -->
+      <kg.apc.jmeter.threads.UltimateThreadGroup guiclass="kg.apc.jmeter.threads.UltimateThreadGroupGui" testclass="kg.apc.jmeter.threads.UltimateThreadGroup" testname="TG — Transfer (18 → 52 → 18)">
+        <collectionProp name="ultimatethreadgroupdata">
+          <collectionProp name="row-transfer-baseline-18">
+            <stringProp name="utg-r1-threads">18</stringProp>
+            <stringProp name="utg-r1-delay">0</stringProp>
+            <stringProp name="utg-r1-startup">10</stringProp>
+            <stringProp name="utg-r1-hold">790</stringProp>
+            <stringProp name="utg-r1-shutdown">10</stringProp>
+          </collectionProp>
+          <collectionProp name="row-transfer-spike-52">
+            <stringProp name="utg-r2-threads">34</stringProp>
+            <stringProp name="utg-r2-delay">310</stringProp>
+            <stringProp name="utg-r2-startup">5</stringProp>
+            <stringProp name="utg-r2-hold">180</stringProp>
+            <stringProp name="utg-r2-shutdown">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+      </kg.apc.jmeter.threads.UltimateThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="transfers.csv">
+          <stringProp name="filename">${DATA_DIR}/transfers.csv</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">sourceAccountId,destinationAccountId,sourceUserId,sourceToken</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.group</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Headers (transfer)">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${sourceToken}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/v1/transactions/transfer">
+          <stringProp name="HTTPSampler.path">/api/v1/transactions/transfer</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;sourceAccountId&quot;:&quot;${sourceAccountId}&quot;,&quot;destinationAccountId&quot;:&quot;${destinationAccountId}&quot;,&quot;amount&quot;:&quot;0.10&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time — Gaussian (mean 3s, σ 1s)">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000.0</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Status is 2xx or 422" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="1729207179">^(2\d\d|422)$</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">Transfer failed under mixed spike.</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">1</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+
+      <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report (per-endpoint)" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree (debug only — disable in CLI)" enabled="false">
+        <boolProp name="ResultCollector.error_logging">true</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>true</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

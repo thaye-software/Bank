@@ -74,6 +74,7 @@ const report = spawnSync(
     '--include', 'src/**',
     '--exclude', 'src/generated/**',
     '--exclude', 'src/server.ts',
+    '--exclude', 'src/config/**',
     '--exclude', '**/*.test.ts',
   ],
   { stdio: 'inherit', shell: false },
