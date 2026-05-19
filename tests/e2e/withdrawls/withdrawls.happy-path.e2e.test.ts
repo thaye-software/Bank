@@ -1,11 +1,6 @@
-import { test, expect } from '@playwright/test';
-import { WithdrawPage } from '../pages/withdraw.page';
-import { DashboardPage } from '../pages/dashboard.page';
+import { test, expect } from '../fixtures';
 
-test('Happy path for withdrawing money', async ({ page }) => {
-  const withdrawPage = new WithdrawPage(page);
-  const dashboardPage = new DashboardPage(page);
-
+test('Happy path for withdrawing money', async ({ page, withdrawPage, dashboardPage }) => {
   await withdrawPage.goto();
   await withdrawPage.withdraw('CHECKING', '123.85');
   await withdrawPage.withdraw('SAVINGS', '124.56');

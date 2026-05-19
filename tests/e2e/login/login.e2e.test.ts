@@ -1,14 +1,11 @@
-import { test, expect } from '@playwright/test';
-import { LoginPage } from '../pages/login.page';
+import { test, expect } from '../fixtures';
 
 // The login journey tests the *act* of authenticating, so it must start from
 // an unauthenticated state — override the suite-wide storageState (which logs
 // Alice in via auth.setup.ts) with an empty one.
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('staff can sign in with valid credentials', async ({ page }) => {
-  const loginPage = new LoginPage(page);
-
+test('staff can sign in with valid credentials', async ({ page, loginPage }) => {
   await loginPage.goto();
   await loginPage.signIn({ email: 'staff@nordicbank.com', password: 'password123' });
 

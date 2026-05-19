@@ -1,6 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { WithdrawPage } from '../pages/withdraw.page';
-import { DashboardPage } from '../pages/dashboard.page';
+import { test, expect } from '../fixtures';
 
 // Negative E2E for the withdrawal flow. The exhaustive rule-by-rule rejection
 // matrix lives at the unit/integration layer; this test exists to prove that
@@ -9,10 +7,7 @@ import { DashboardPage } from '../pages/dashboard.page';
 // Trigger: $10,000.01 single withdrawal — exceeds MAX_SINGLE_WITHDRAWAL ($10,000),
 // so transaction.validator.ts returns AMOUNT_TOO_HIGH and the Withdraw page
 // renders that code inside its destructive Alert.
-test('shows AMOUNT_TOO_HIGH and does not record a transaction when withdrawal exceeds the per-tx max', async ({ page }) => {
-  const withdrawPage = new WithdrawPage(page);
-  const dashboardPage = new DashboardPage(page);
-
+test('shows AMOUNT_TOO_HIGH and does not record a transaction when withdrawal exceeds the per-tx max', async ({ page, withdrawPage, dashboardPage }) => {
   await withdrawPage.goto();
   await withdrawPage.withdraw('CHECKING', '10000.01');
 

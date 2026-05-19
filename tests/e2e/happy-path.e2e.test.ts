@@ -1,25 +1,21 @@
-import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { RegisterPage } from './pages/register.page';
-import { KycPage } from './pages/kyc.page';
-import { AccountsPage } from './pages/accounts.page';
-import { DepositPage } from './pages/deposit.page';
+import { test, expect } from './fixtures';
 
 // Start logged-out. The project default storageState authenticates as Alice
 // (see playwright.config.ts), but this test exercises the registration spine
 // from zero — Alice's session would short-circuit §1 and §2.
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('onboarding spine — register → KYC → first account → first deposit', async ({ page }) => {
+test('onboarding spine — register → KYC → first account → first deposit', async ({
+  registerPage,
+  kycPage,
+  accountsPage,
+  depositPage,
+}) => {
   // One UUID per test invocation. Playwright runs the test once per project
   // (chromium / firefox / webkit), so each parallel browser gets its own
   // unique identity — emails and national IDs cannot collide across workers.
   const id = randomUUID();
-
-  const registerPage = new RegisterPage(page);
-  const kycPage = new KycPage(page);
-  const accountsPage = new AccountsPage(page);
-  const depositPage = new DepositPage(page);
 
   // §1. Register
   await registerPage.goto();
