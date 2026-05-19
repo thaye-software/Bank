@@ -25,7 +25,7 @@ export function getSavingsApy(balance: Decimal): Decimal {
       return tier.apy;
     }
   }
-  return SAVINGS_TIERS[0]!.apy;
+  return SAVINGS_TIERS[0]!.apy
 }
 
 export function calculateMonthlyRate(apy: Decimal): Decimal {
