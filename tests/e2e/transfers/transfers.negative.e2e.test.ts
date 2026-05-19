@@ -1,17 +1,21 @@
 import { test, expect } from '@playwright/test';
+import { TransferPage } from '../pages/transfer.page';
 
-test('test', async ({ page }) => {
-  // Auth is provided by auth.setup.ts via storageState — start straight on the dashboard.
-  await page.goto('/');
-  await page.getByRole('link', { name: 'Transfer' }).click();
-  await expect(page).toHaveURL('http://localhost:5173/transactions/transfer'); 
-  const errorAlert = page.getByRole('alert');
+// Alice's own BUSINESS account — using it as both source and destination
+// triggers SELF_TRANSFER_NOT_ALLOWED (banking-rules §4).
+const ALICE_BUSINESS_ID = '33333333-3333-3333-3333-333333333333';
 
-  await page.getByRole('combobox', { name: 'From account' }).click();
-  await page.getByRole('option', { name: 'BUSINESS — $' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).fill('33333333-3333-3333-3333-333333333333');
-  await page.getByRole('textbox', { name: 'Amount' }).fill('435');
-  await page.getByRole('button', { name: 'Transfer' }).click();
-  await expect(errorAlert).toBeVisible();
-  await expect(errorAlert).toContainText('SELF_TRANSFER_NOT_ALLOWED');
+test('shows SELF_TRANSFER_NOT_ALLOWED when source and destination are the same account', async ({ page }) => {
+  const transferPage = new TransferPage(page);
+
+  await transferPage.goto();
+  await transferPage.transfer({
+    from: 'BUSINESS',
+    destinationId: ALICE_BUSINESS_ID,
+    amount: '435',
+  });
+
+  const alert = transferPage.getAlert();
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText('SELF_TRANSFER_NOT_ALLOWED');
 });

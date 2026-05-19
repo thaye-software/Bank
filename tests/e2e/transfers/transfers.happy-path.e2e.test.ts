@@ -1,42 +1,39 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
+import { TransferPage } from "../pages/transfer.page";
 
-test('Happy path for transferring money', async ({ page }) => {
-  // Auth is provided by auth.setup.ts via storageState — start straight on the dashboard.
-  await page.goto('/');
-  await page.getByRole('link', { name: 'Transfer' }).click();
-  await expect(page).toHaveURL('http://localhost:5173/transactions/transfer'); 
-  const savingsAlert = page.getByRole('alert');
+// Seeded fixture account IDs (see tests/e2e/setup/seed.setup.ts). Two of Alice's
+// own accounts plus a counterparty owned by Bob — used as the destination so the
+// transfer is a real cross-user transfer, not a self-transfer rejection.
+const ALICE_BUSINESS_ID = "33333333-3333-3333-3333-333333333333";
+const BOB_CHECKING_ID = "11111111-1111-1111-1111-111111111111";
 
-  // transfer from SAVINGS to bussiness account
-  await page.getByRole('combobox', { name: 'From account' }).click();
-  await page.getByRole('option', { name: 'SAVINGS — $' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).fill('33333333-3333-3333-3333-333333333333');
-  await page.getByRole('textbox', { name: 'Amount' }).click();
-  await page.getByRole('textbox', { name: 'Amount' }).fill('123');
-  await page.getByRole('button', { name: 'Transfer' }).click()
-  await expect(savingsAlert).toBeVisible();
-  await expect(savingsAlert).toContainText('Transferred $123.00');
+test("Happy path for transferring money", async ({ page }) => {
+  const transferPage = new TransferPage(page);
+  const alert = transferPage.getAlert();
 
-  // transfer from CHECKING to bussiness account
-  await page.getByRole('combobox', { name: 'From account' }).click();
-  await page.getByRole('option', { name: 'CHECKING — $' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).fill('33333333-3333-3333-3333-333333333333');
-  await page.getByRole('textbox', { name: 'Amount' }).click();
-  await page.getByRole('textbox', { name: 'Amount' }).fill('321');
-  await page.getByRole('button', { name: 'Transfer' }).click();
-  await expect(savingsAlert).toBeVisible();
-  await expect(savingsAlert).toContainText('Transferred $321.00');
+  await transferPage.goto();
 
-  // transfer from BUSINESS to CHECKING account
-  await page.getByRole('combobox', { name: 'From account' }).click();
-  await page.getByLabel('BUSINESS — $').getByText('BUSINESS — $').click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).click();
-  await page.getByRole('textbox', { name: 'Destination account ID' }).fill('11111111-1111-1111-1111-111111111111');
-  await page.getByRole('textbox', { name: 'Amount' }).click();
-  await page.getByRole('textbox', { name: 'Amount' }).fill('213');
-  await page.getByRole('button', { name: 'Transfer' }).click();
-  await expect(savingsAlert).toBeVisible();
-  await expect(savingsAlert).toContainText('Transferred $213.00');
+  await transferPage.transfer({
+    from: "SAVINGS",
+    destinationId: ALICE_BUSINESS_ID,
+    amount: "123",
+  });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("Transferred $123.00");
+
+  await transferPage.transfer({
+    from: "CHECKING",
+    destinationId: ALICE_BUSINESS_ID,
+    amount: "321",
+  });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("Transferred $321.00");
+
+  await transferPage.transfer({
+    from: "BUSINESS",
+    destinationId: BOB_CHECKING_ID,
+    amount: "213",
+  });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("Transferred $213.00");
 });

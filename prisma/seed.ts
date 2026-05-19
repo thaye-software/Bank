@@ -16,6 +16,11 @@ export async function seedDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.complianceFlag.deleteMany();
   await prisma.transaction.deleteMany();
 
+  await prisma.loanApplication.deleteMany();
+  await prisma.kycSubmission.deleteMany();
+  await prisma.account.deleteMany();
+  await prisma.user.deleteMany();
+
 
   const staffSeed = {
     email: 'staff@nordicbank.com',
