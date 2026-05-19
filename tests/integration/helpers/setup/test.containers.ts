@@ -22,12 +22,3 @@ export async function startPostgresTestContainer(): Promise<TestContainers> {
   containers = { postgres };
   return containers;
 }
-
-export async function stopPostgresTestContainer(): Promise<void> {
-  if (!containers) return;
-
-  console.log("🐳 Stopping test container...");
-  await containers.postgres.stop();
-  containers = null;
-  console.log("✅ Postgres container stopped");
-}

@@ -8,7 +8,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '../../../../src/generated/prisma/client.js';
 import { AccountRepository } from '../../../../src/repositories/account.repository.js';
 import { TransactionRepository } from '../../../../src/repositories/transaction.repository.js';
-import { startPostgresTestContainer } from '../../../helpers/setup/test.containers.js';
+import { startPostgresTestContainer } from '../../helpers/setup/test.containers.js';
 
 // ---------------------------------------------------------------------------
 // DB integration tests for the WITHDRAWAL flow.

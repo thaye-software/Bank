@@ -5,7 +5,7 @@ import {
   parseAssessmentResponse,
   runLoanAssessment,
 } from '../../../src/domain/loans/loan.assessment.agent';
-import { buildLoanApplication } from '../../helpers/factories';
+import { buildLoanApplication } from '../helpers/factories';
 
 // ---------------------------------------------------------------------------
 // Helpers

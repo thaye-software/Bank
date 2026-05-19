@@ -15,9 +15,13 @@ All tests live under the top-level `tests/` directory, mirrored by domain area. 
 | Unit | `tests/unit/<module>/` | `<subject>.unit.test.ts` |
 | Integration — API | `tests/integration/api/` | `<subject>.api.test.ts` |
 | Integration — Database | `tests/integration/database/` | `<subject>.db.test.ts` |
-| E2E | `tests/e2e/<journey>/` | `<journey>.e2e.test.ts` |
+| E2E specs | `tests/e2e/specs/<journey>/` | `<journey>.e2e.test.ts` |
 | Stress | `tests/stress/<subject>/` | `<subject>.stress.ts` |
-| Helpers / fixtures | `tests/helpers/` (and `tests/helpers/setup/`) | `*.ts` (no `.test` suffix) |
+| Unit helpers | `tests/unit/helpers/` | `*.ts` (no `.test` suffix) |
+| Integration helpers | `tests/integration/helpers/` (and `tests/integration/helpers/setup/`) | `*.ts` (no `.test` suffix) |
+| E2E support (POMs, fixtures, setup) | `tests/e2e/support/` | `*.ts` (no `.test` suffix) |
+
+Helpers live next to the test type that consumes them. Avoid a top-level `tests/helpers/` — if a helper is genuinely shared across test types, that's a sign to inline or duplicate rather than create cross-cutting test coupling.
 
 Concrete examples currently in the repo:
 
@@ -26,12 +30,15 @@ tests/unit/account/account.rules.unit.test.ts
 tests/unit/interest/interest.calculator.unit.test.ts
 tests/unit/kyc/kyc.validator.unit.test.ts
 tests/unit/transaction/transaction.validator.unit.test.ts
+tests/unit/helpers/factories.ts
 tests/integration/api/auth.api.test.ts
 tests/integration/database/account.db.test.ts
-tests/e2e/login/login.e2e.test.ts
-tests/helpers/factories.ts
-tests/helpers/server.helpers.ts
-tests/helpers/setup/test.containers.ts
+tests/integration/helpers/server.helpers.ts
+tests/integration/helpers/setup/test.containers.ts
+tests/e2e/specs/login/login.e2e.test.ts
+tests/e2e/support/fixtures.ts
+tests/e2e/support/pages/login.page.ts
+tests/e2e/support/setup/auth.setup.ts
 ```
 
 - One folder per `<module>` / `<subject>` / `<journey>` — even when only one test file lives there today, so adding sibling tests later does not require a restructure.
@@ -196,7 +203,7 @@ expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
 
 **Allowed exceptions** (narrow — must be justified in a comment):
 - Iterating over **randomly-generated** or property-based inputs (e.g. `fast-check`) where the loop is the *point* of the test, not a way to compress hand-written cases. Hand-written cases must use `it.each`.
-- Loops in `tests/helpers/` setup utilities — those are not test bodies. Helpers may contain whatever logic they need.
+- Loops in `tests/**/helpers/` and `tests/e2e/support/` setup utilities — those are not test bodies. Helpers may contain whatever logic they need.
 
 If you find yourself wanting an `if` to choose between two assertions, you have two test cases — split them into two `it` blocks (or `it.each` rows).
 
@@ -226,18 +233,20 @@ const mockAccountRepo = {
 
 ## 5. Test Data Factories
 
-All fixtures come from `tests/helpers/factories.ts`. Factories use `@faker-js/faker` and accept partial overrides:
+Unit-test fixtures come from `tests/unit/helpers/factories.ts`. Factories accept partial overrides:
 
 ```typescript
-export function buildAccount(overrides?: Partial<Account>): Account {
+export function buildLoanApplication(overrides?: Partial<LoanApplicationInput>): LoanApplicationInput {
   return {
-    id: faker.string.uuid(),
-    userId: faker.string.uuid(),
-    type: 'CHECKING',
-    balance: faker.number.float({ min: 100, max: 10_000, fractionDigits: 2 }),
-    status: 'ACTIVE',
-    overdraftEnabled: false,
-    createdAt: new Date(),
+    applicantAge: 30,
+    annualIncome: 80_000,
+    monthlyDebt: 500,
+    requestedAmount: 20_000,
+    requestedTermMonths: 36,
+    creditScore: 720,
+    employmentStatus: 'EMPLOYED',
+    kycStatus: 'VERIFIED',
+    existingLoansCount: 0,
     ...overrides,
   };
 }
@@ -253,7 +262,7 @@ API integration tests use **Playwright's `request` context** (not supertest, not
 
 Runner: `@playwright/test`. Inside an `*.api.test.ts` file you use `test`, `expect`, and `request` from `@playwright/test`. **Never import from `vitest`** — `vi.fn`, `vi.useFakeTimers`, `vi.setSystemTime` are not available in the Playwright runner. Time-sensitive logic (weekend checks, rolling windows) must be controlled by injecting a clock through the request body / route, or by writing rows directly to the DB with the desired `createdAt`, or by gating on `process.env`.
 
-Shared helpers in `tests/helpers/server.helpers.ts`:
+Shared helpers in `tests/integration/helpers/server.helpers.ts`:
 
 ```typescript
 export function createTestApp(db: PrismaClient) { return createApp({ db }); }
@@ -348,7 +357,7 @@ Every `*.api.test.ts` opens with a **subject** line and a **traceability matrix*
 
 - `beforeEach`: truncate all tables in dependency order, then seed minimum required state
 - Use `TEST_DATABASE_URL` — never `DATABASE_URL`
-- Truncation helper in `tests/helpers/db.helpers.ts`:
+- Truncation helper in `tests/integration/helpers/db.helpers.ts`:
 
 ```typescript
 export async function truncateAll(prisma: PrismaClient) {
