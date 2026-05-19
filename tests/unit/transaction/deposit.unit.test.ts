@@ -1,45 +1,98 @@
-// tests/unit/transaction/deposit.unit.test.ts
 import Decimal from 'decimal.js';
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { validateDepositAmount } from '../../../src/domain/transactions/transaction.validator';
-import { ErrorCode } from '../../../src/shared/errors';
 import { shouldAmlFlag } from '../../../src/domain/accounts/account.rules';
+import { ErrorCode } from '../../../src/shared/errors';
+import { isErr } from '../../../src/shared/result';
 
 const MIN_DECIMAL = new Decimal('-1e30');
 const MAX_DECIMAL = new Decimal('1e30');
 
 describe('Deposit validators', () => {
-    describe('validateDepositAmount — 3-value Boundary Value Analysis', () => {
+    describe('Minimum & Maximum deposits', () => {
+        describe('Invalid: below minimum', () => {
+            it('EP: -12.345,67 is rejected', () => {
+                const result = validateDepositAmount(new Decimal('-12345.67'));
 
-        const cases: Array<[string, boolean, string?]> = [
-            ['0.00', false, ErrorCode.AMOUNT_TOO_LOW],
-            ['0.01', true],
-            ['0.02', true],
+                expect(isErr(result)).toBe(true);
+                if (isErr(result)) {
+                    expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+                }
+            });
 
-            ['999999.99', true],
-            ['1000000.00', true],
-            ['1000000.01', false, ErrorCode.AMOUNT_TOO_HIGH],
-        ];
+            it.each(['0.00'])('BV: %s is rejected', (amountStr) => {
+                const result = validateDepositAmount(new Decimal(amountStr));
 
-        it.each(cases)('amount %s => ok=%s', (amountStr, expectedOk, expectedCode) => {
-            const result = validateDepositAmount(new Decimal(amountStr));
-            expect(result.ok).toBe(expectedOk);
-
-            if (!expectedOk) {
-                if (result.ok) throw new Error('Expected a failure result but got ok=true');
-                expect(result.error.code).toBe(expectedCode);
-            }
+                expect(isErr(result)).toBe(true);
+                if (isErr(result)) {
+                    expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
+                }
+            });
         });
-    });
 
-    describe('shouldAmlFlag — AML threshold 3-value BVA', () => {
-        it.each([
-            ['9999.99', false],
-            ['10000.00', false],
-            ['10000.01', true],
-        ])('amount %s -> flagged=%s', (amountStr, expected) => {
-            const res = shouldAmlFlag(new Decimal(amountStr));
-            expect(res).toBe(expected);
+        describe('Valid: 0.01 - 10.000,00', () => {
+            it('EP: 4.999,99 is accepted', () => {
+                const amount = new Decimal('4999.99');
+                const result = validateDepositAmount(amount);
+
+                expect(result.ok).toBe(true);
+                expect(shouldAmlFlag(amount)).toBe(false);
+            });
+
+            it.each(['0.01', '0.02', '9999.99', '10000.00'])(
+                'BV: %s is accepted',
+                (amountStr) => {
+                    const amount = new Decimal(amountStr);
+                    const result = validateDepositAmount(amount);
+
+                    expect(result.ok).toBe(true);
+                    expect(shouldAmlFlag(amount)).toBe(false);
+                },
+            );
+        });
+
+        describe('Valid + flagged: 10.000,01 - 1.000.000,00', () => {
+            it('EP: 50.000,00 is accepted and flagged', () => {
+                const amount = new Decimal('50000.00');
+                const result = validateDepositAmount(amount);
+
+                expect(result.ok).toBe(true);
+                expect(shouldAmlFlag(amount)).toBe(true);
+            });
+
+            it.each(['10000.01', '10000.02', '999999.99', '1000000.00'])(
+                'BV: %s is accepted and flagged',
+                (amountStr) => {
+                    const amount = new Decimal(amountStr);
+                    const result = validateDepositAmount(amount);
+
+                    expect(result.ok).toBe(true);
+                    expect(shouldAmlFlag(amount)).toBe(true);
+                },
+            );
+        });
+
+        describe('Invalid: above maximum', () => {
+            it('EP: 1.500.000,00 is rejected', () => {
+                const result = validateDepositAmount(new Decimal('1500000.00'));
+
+                expect(isErr(result)).toBe(true);
+                if (isErr(result)) {
+                    expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_HIGH);
+                }
+            });
+
+            it.each(['1000000.01', '1000000.02'])(
+                'BV: %s is rejected',
+                (amountStr) => {
+                    const result = validateDepositAmount(new Decimal(amountStr));
+
+                    expect(isErr(result)).toBe(true);
+                    if (isErr(result)) {
+                        expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_HIGH);
+                    }
+                },
+            );
         });
     });
 });
