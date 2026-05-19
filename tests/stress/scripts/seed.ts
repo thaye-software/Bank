@@ -96,15 +96,32 @@ async function main(): Promise<void> {
   console.log('Minting JWTs and writing CSVs...');
   mkdirSync(DATA_DIR, { recursive: true });
 
+  // Mint once per user, reuse across every CSV that needs auth for that user.
+  const tokens = users.map((u) => signToken({ userId: u.id, email: u.email, role: 'CUSTOMER' }));
+
   const userRows = ['userId,email,token'];
   const accountRows = ['accountId,userId,token'];
   users.forEach((u, i) => {
-    const token = signToken({ userId: u.id, email: u.email, role: 'CUSTOMER' });
-    userRows.push(`${u.id},${u.email},${token}`);
-    accountRows.push(`${accounts[i]!.id},${u.id},${token}`);
+    userRows.push(`${u.id},${u.email},${tokens[i]!}`);
+    accountRows.push(`${accounts[i]!.id},${u.id},${tokens[i]!}`);
   });
   writeFileSync(join(DATA_DIR, 'users.csv'), `${userRows.join('\n')}\n`);
   writeFileSync(join(DATA_DIR, 'accounts.csv'), `${accountRows.join('\n')}\n`);
+
+  // Transfer pairing: source[i] -> dest[(i + SHIFT) % N] where SHIFT is the
+  // largest coprime-with-N value near N/2. Coprime shift guarantees a perfect
+  // permutation — every account is exactly one row's source and exactly one
+  // (different) row's destination — so the CSV exercises the maximum number
+  // of distinct (source, dest) pairs. SHIFT ≈ N/2 also spreads contention:
+  // adjacent rows don't share accounts, so neighbouring VUs in a round-robin
+  // CSV reader won't pile up on the same source/dest pair.
+  const TRANSFER_SHIFT = coprimeShift(NUM_USERS);
+  const transferRows = ['sourceAccountId,destinationAccountId,sourceUserId,sourceToken'];
+  accounts.forEach((src, i) => {
+    const dest = accounts[(i + TRANSFER_SHIFT) % accounts.length]!;
+    transferRows.push(`${src.id},${dest.id},${users[i]!.id},${tokens[i]!}`);
+  });
+  writeFileSync(join(DATA_DIR, 'transfers.csv'), `${transferRows.join('\n')}\n`);
 
   const hotspotToken = signToken({ userId: hotspotOwner.id, email: hotspotOwner.email, role: 'CUSTOMER' });
   writeFileSync(
@@ -116,6 +133,7 @@ async function main(): Promise<void> {
 Done.
   users:        ${NUM_USERS.toLocaleString()}        -> tests/stress/data/users.csv
   accounts:     ${NUM_USERS.toLocaleString()}        -> tests/stress/data/accounts.csv
+  transfers:    ${NUM_USERS.toLocaleString()}        -> tests/stress/data/transfers.csv (shift=${TRANSFER_SHIFT})
   transactions: ${transactions.length.toLocaleString()}
   hotspot:      1 account ($10M) -> tests/stress/data/hotspot.csv
 `);
@@ -134,6 +152,19 @@ async function chunkedCreateMany<T>(
   for (let i = 0; i < rows.length; i += chunkSize) {
     await insert(rows.slice(i, i + chunkSize));
   }
+}
+
+// Largest shift in [1, n-1] coprime with n, starting near n/2. Falls back to 1.
+function coprimeShift(n: number): number {
+  if (n < 2) return 1;
+  for (let shift = Math.floor(n / 2); shift >= 1; shift--) {
+    if (gcd(shift, n) === 1) return shift;
+  }
+  return 1;
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
 }
 
 function parseIntArg(flag: string, fallback: number): number {
