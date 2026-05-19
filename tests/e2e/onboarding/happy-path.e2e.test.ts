@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { test, expect } from './fixtures';
+import { test, expect } from '../fixtures';
 
 // Start logged-out. The project default storageState authenticates as Alice
 // (see playwright.config.ts), but this test exercises the registration spine

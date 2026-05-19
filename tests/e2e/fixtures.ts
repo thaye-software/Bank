@@ -7,6 +7,7 @@ import { DepositPage } from './pages/deposit.page';
 import { WithdrawPage } from './pages/withdraw.page';
 import { TransferPage } from './pages/transfer.page';
 import { DashboardPage } from './pages/dashboard.page';
+import { LoanApplicationPage } from './pages/loan-application.page';
 
 // One fixture per POM. Playwright instantiates each lazily — fixtures are only
 // constructed for the tests that destructure them, so unused POMs cost nothing.
@@ -19,6 +20,7 @@ interface PomFixtures {
   withdrawPage: WithdrawPage;
   transferPage: TransferPage;
   dashboardPage: DashboardPage;
+  loanApplicationPage: LoanApplicationPage;
 }
 
 export const test = base.extend<PomFixtures>({
@@ -45,6 +47,9 @@ export const test = base.extend<PomFixtures>({
   },
   dashboardPage: async ({ page }, use) => {
     await use(new DashboardPage(page));
+  },
+  loanApplicationPage: async ({ page }, use) => {
+    await use(new LoanApplicationPage(page));
   },
 });
 
