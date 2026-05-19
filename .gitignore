@@ -8,3 +8,4 @@ playwright-report/
 test-results/
 tests/e2e/.auth/
 .superpowers/
+tests/stress/reports/
