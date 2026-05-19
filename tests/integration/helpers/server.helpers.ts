@@ -1,7 +1,7 @@
-import { createApp } from '../../src/app';
-import { signToken } from '../../src/middleware/auth.middleware';
+import { createApp } from '../../../src/app';
+import { signToken } from '../../../src/middleware/auth.middleware';
 import type { PrismaClient } from '@db';
-import type { JwtPayload } from '../../src/middleware/auth.middleware';
+import type { JwtPayload } from '../../../src/middleware/auth.middleware';
 
 export function createTestApp(
   db: PrismaClient,
