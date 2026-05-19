@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { PrismaClient } from '../../../src/generated/prisma/client.js';
+import { PrismaClient } from '../../../../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { test as setup } from '@playwright/test';
-import { seedDatabase } from '../../../prisma/seed';
+import { seedDatabase } from '../../../../prisma/seed';
 
 setup('seed database', async () => {
   const connectionString = process.env['DATABASE_URL'];

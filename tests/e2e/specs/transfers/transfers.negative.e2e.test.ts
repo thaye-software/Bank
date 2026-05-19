@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // Alice's own BUSINESS account — using it as both source and destination
 // triggers SELF_TRANSFER_NOT_ALLOWED (banking-rules §4).

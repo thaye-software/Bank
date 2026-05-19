@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // Negative E2E for the loan application flow. The exhaustive rule-by-rule
 // rejection matrix (R1–R9 + DTI + amount-vs-tier) lives at the unit layer in

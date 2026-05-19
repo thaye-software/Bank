@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // Seeded fixture account IDs (see tests/e2e/setup/seed.setup.ts). Two of Alice's
 // own accounts plus a counterparty owned by Bob — used as the destination so the

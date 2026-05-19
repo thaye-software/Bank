@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 test('Happy path for withdrawing money', async ({ page, withdrawPage, dashboardPage }) => {
   await withdrawPage.goto();

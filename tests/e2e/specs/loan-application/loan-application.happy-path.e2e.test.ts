@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // Happy path: a clean application that hits every rule's "accept" branch and
 // lands on the tier-1 credit-score band (750–850).

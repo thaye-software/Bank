@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // Negative E2E for the withdrawal flow. The exhaustive rule-by-rule rejection
 // matrix lives at the unit/integration layer; this test exists to prove that

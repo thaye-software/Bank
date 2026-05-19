@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '../../support/fixtures';
 
 // The login journey tests the *act* of authenticating, so it must start from
 // an unauthenticated state — override the suite-wide storageState (which logs
