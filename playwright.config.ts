@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const ALICE_STORAGE_STATE = 'tests/e2e/.auth/alice.json';
+const ALICE_STORAGE_STATE = 'tests/e2e/support/.auth/alice.json';
 
 export default defineConfig({
   fullyParallel: true,
@@ -28,33 +28,33 @@ export default defineConfig({
     // Setup chain: seed the dev DB, then log in once and snapshot Alice's JWT.
     {
       name: 'e2e-seed',
-      testDir: './tests/e2e/setup',
+      testDir: './tests/e2e/support/setup',
       testMatch: 'seed.setup.ts',
     },
     {
       name: 'e2e-auth',
-      testDir: './tests/e2e/setup',
+      testDir: './tests/e2e/support/setup',
       testMatch: 'auth.setup.ts',
       dependencies: ['e2e-seed'],
     },
 
     {
       name: 'e2e-chromium',
-      testDir: './tests/e2e',
+      testDir: './tests/e2e/specs',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Chrome'], storageState: ALICE_STORAGE_STATE },
       dependencies: ['e2e-auth'],
     },
     {
       name: 'e2e-firefox',
-      testDir: './tests/e2e',
+      testDir: './tests/e2e/specs',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Firefox'], storageState: ALICE_STORAGE_STATE },
       dependencies: ['e2e-auth'],
     },
     {
       name: 'e2e-webkit',
-      testDir: './tests/e2e',
+      testDir: './tests/e2e/specs',
       testMatch: '**/*.test.ts',
       use: { ...devices['Desktop Safari'], storageState: ALICE_STORAGE_STATE },
       dependencies: ['e2e-auth'],

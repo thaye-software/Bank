@@ -6,6 +6,6 @@ src/generated/
 coverage/
 playwright-report/
 test-results/
-tests/e2e/.auth/
+tests/e2e/support/.auth/
 .superpowers/
 tests/stress/reports/
