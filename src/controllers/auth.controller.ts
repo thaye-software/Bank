@@ -26,6 +26,7 @@ export function makeAuthController(deps: AppDeps) {
     });
   });
 
+
   const login = asyncHandler(async (req: Request, res: Response, _next: NextFunction) => {
     const { email, password } = req.body as { email: string; password: string };
     const userRepo = new (await import('../repositories/user.repository')).UserRepository(deps.db);
@@ -46,6 +47,7 @@ export function makeAuthController(deps: AppDeps) {
     });
   });
 
+
   const me = asyncHandler(async (req: Request, res: Response, _next: NextFunction) => {
     const userRepo = new (await import('../repositories/user.repository')).UserRepository(deps.db);
     const user = await userRepo.findById(req.user!.userId);
@@ -62,6 +64,7 @@ export function makeAuthController(deps: AppDeps) {
       },
     });
   });
+  
 
   return { register, login, me };
 }
