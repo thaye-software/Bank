@@ -9,3 +9,5 @@ test-results/
 tests/e2e/support/.auth/
 .superpowers/
 tests/stress/reports/
+jmeter.log
+tests/stress/data/*.csv
