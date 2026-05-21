@@ -191,6 +191,52 @@ describe("7.3 Rate Caching", () => {
   });
 });
 
+describe("7.4 Conversion Fee Schedule", () => {
+  beforeEach(() => {
+    clearCache();
+    mockFetchSuccess();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    clearCache();
+  });
+
+  it.each([
+    ["1.00", "0.50"],      // minimum fee floor
+    ["10.00", "0.50"],     // EP value in 1.00–19.99
+    ["19.99", "0.50"],     // upper edge of first partition
+    ["20.00", "0.50"],     // lower edge of 2.50% tier, still min fee
+    ["20.01", "0.50"],     // just above boundary, still min fee
+    ["500.00", "12.50"],   // EP value in 20.00–999.99
+    ["999.98", "25.00"],   // just below upper edge, rounds to 25.00
+    ["999.99", "25.00"],   // upper edge of 2.50% tier
+    ["1000.00", "17.50"],  // lower edge of 1.75% tier
+    ["1000.01", "17.50"],  // just above boundary
+    ["5000.00", "87.50"],  // EP value in 1,000.00–9,999.99
+    ["9999.98", "175.00"], // just below upper edge, rounds to 175.00
+    ["9999.99", "175.00"], // upper edge of 1.75% tier
+    ["10000.00", "100.00"],// lower edge of 1.00% tier
+    ["10000.01", "100.00"],// just above boundary
+    ["15000.00", "150.00"],// EP value in 10,000.00–25,000.00
+    ["24999.99", "250.00"],// just below max, rounds to 250.00
+    ["25000.00", "250.00"],// max allowed conversion amount
+  ])("should apply correct fee for conversion amount %s", async (amount, expectedFee) => {
+    const result = await calculateConversion({
+      fromCurrency: "USD",
+      toCurrency: "EUR",
+      amount: new Decimal(amount),
+      rollingDailyConversionUsd: new Decimal(0),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.fee.toFixed(2)).toBe(expectedFee);
+  });
+});
+
 describe("7.5 Conversion Limits", () => {
   beforeEach(() => {
     clearCache();
