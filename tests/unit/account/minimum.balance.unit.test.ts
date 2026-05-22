@@ -69,12 +69,12 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
     // ── Invalid partition: MIN DECIMAL .. -$500.01 ─────────────────────────
     describe('Invalid partition: MIN DECIMAL .. -$500.01 (post-balance < -$500)', () => {
       it.each<[string, Decimal]>([
-        ['BV MIN DECIMAL - $0.01',           MIN_DECIMAL.minus('0.01')],
-        ['BV MIN DECIMAL',                   MIN_DECIMAL],
-        ['BV MIN DECIMAL + $0.01',           MIN_DECIMAL.plus('0.01')],
+        ['BV MIN DECIMAL - $0.01',            MIN_DECIMAL.minus('0.01')],
+        ['BV MIN DECIMAL',                    MIN_DECIMAL],
+        ['BV MIN DECIMAL + $0.01',            MIN_DECIMAL.plus('0.01')],
         ['EP -$5,000.00 (mean value)',       new Decimal('-5000')],
-        ['BV -$500.02 (just below -$500.01)',new Decimal('-500.02')],
-        ['BV -$500.01 (upper boundary)',     new Decimal('-500.01')],
+        ['BV -$500.02 (just below -$500.01)', new Decimal('-500.02')],
+        ['BV -$500.01 (upper boundary)',      new Decimal('-500.01')],
       ])('%s → OVERDRAFT_LIMIT_REACHED', (_label: string, postBalance: Decimal) => {
         const result = checkPostTransactionBalance(
           new Decimal('0'),
@@ -89,14 +89,15 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
       });
     });
 
-    // ── Valid partition: -$500.00 .. MAX DECIMAL ───────────────────────────
-    describe('Valid partition: -$500.00 .. MAX DECIMAL (post-balance ≥ -$500)', () => {
+    // ── Valid partition: -$500.00 .. $0.00 (overdraft range) ───────────────
+    describe('Valid partition: -$500.00 .. $0.00 (overdraft range, post-balance ≥ -$500)', () => {
       it.each<[string, Decimal]>([
-        ['BV -$500.00 (lower boundary)',     new Decimal('-500')],
-        ['BV -$499.99 (just inside)',        new Decimal('-499.99')],
-        ['EP $5,000.00 (mean value)',        new Decimal('5000')],
-        ['BV MAX DECIMAL - $0.01',           MAX_DECIMAL.minus('0.01')],
-        ['BV MAX DECIMAL (upper boundary)',  MAX_DECIMAL],
+        ['BV -$500.00 (lower boundary)',      new Decimal('-500')],
+        ['BV -$499.99 (just inside lower)',   new Decimal('-499.99')],
+        ['EP -$250.00 (mean value)',          new Decimal('-250')],
+        ['BV -$0.01 (just below zero)',       new Decimal('-0.01')],
+        ['BV $0.00 (upper boundary)',         new Decimal('0')],
+        ['BV $0.01 (just above zero)',        new Decimal('0.01')],
       ])('%s → ok', (_label: string, postBalance: Decimal) => {
         const result = checkPostTransactionBalance(
           new Decimal('0').plus(postBalance),
