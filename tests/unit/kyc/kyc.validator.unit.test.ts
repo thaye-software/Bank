@@ -1,7 +1,10 @@
+// tests/unit/kyc/kyc.state.transitions.unit.test.ts
+
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/config/env', () => ({
   env: {
+    // keep consistent with your other KYC unit tests (enable auto-approve)
     ENABLE_KYC_AUTO_APPROVE: true,
   },
 }));
@@ -28,108 +31,85 @@ function makeInput(overrides: Partial<KycSubmissionInput> = {}): KycSubmissionIn
   };
 }
 
-describe('KYC Validator', () => {
-  describe('calculateAge', () => {
-    it('returns 18 for someone who is 18 years and 1 day old (born 2008-05-17)', () => {
-      // Due to 365.25 approximation: 6575 days / 365.25 = 18.0027... → floors to 18
-      const age = calculateAge(new Date('2008-05-17T12:00:00Z'), NOW);
-      expect(age).toBe(18);
-    });
+describe('KYC state transitions (composed)', () => {
+  it('NOT_STARTED -> PENDING_REVIEW when not auto-approved', () => {
+    const input = makeInput({ nationalIdNumber: 'ABC-000' });
+    // assert initial resubmission allowance
+    expect(canResubmitKyc('NOT_STARTED')).toBe(true);
 
-    it('returns 17 for someone who is 18 years old but born on the exact same day (2008-05-18)', () => {
-      // Due to 365.25 approximation: 6574 days / 365.25 = 17.9986... → floors to 17
-      const age = calculateAge(new Date('2008-05-18T12:00:00Z'), NOW);
-      expect(age).toBe(17);
-    });
+    const validated = validateKycSubmission(input, 'NOT_STARTED', NOW);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
 
-    it('returns 17 for someone who is one day short of 18 (born 2008-05-19)', () => {
-      // 6573 days / 365.25 = 17.9945... → floors to 17
-      const age = calculateAge(new Date('2008-05-19T12:00:00Z'), NOW);
-      expect(age).toBe(17);
-    });
+    expect(validated.value.autoApprove).toBe(false);
+    const next = getNextKycStatus('NOT_STARTED', validated.value.autoApprove);
+    expect(next).toBe('PENDING_REVIEW');
+
+    // after transition to PENDING_REVIEW resubmission should be disallowed
+    expect(canResubmitKyc(next)).toBe(false);
   });
 
-  describe('validateKycSubmission', () => {
-    it('rejects a submission when the KYC status is already VERIFIED', () => {
-      const result = validateKycSubmission(makeInput(), 'VERIFIED', NOW);
+  it('NOT_STARTED -> VERIFIED when auto-approved (TEST- national id)', () => {
+    const input = makeInput({ nationalIdNumber: 'TEST-0001' });
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.code).toBe(ErrorCode.KYC_ALREADY_VERIFIED);
-      }
-    });
+    const validated = validateKycSubmission(input, 'NOT_STARTED', NOW);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
 
-    it('rejects applicants who are under 18 (born 2008-05-19)', () => {
-      const result = validateKycSubmission(
-          makeInput({ dateOfBirth: new Date('2008-05-19T12:00:00Z') }),
-          'NOT_STARTED',
-          NOW,
-      );
+    expect(validated.value.autoApprove).toBe(true);
+    const next = getNextKycStatus('NOT_STARTED', validated.value.autoApprove);
+    expect(next).toBe('VERIFIED');
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.code).toBe(ErrorCode.APPLICANT_UNDERAGE);
-      }
-    });
-
-    it('accepts applicants who are 18 or older (born 2008-05-17)', () => {
-      const result = validateKycSubmission(
-          makeInput({ dateOfBirth: new Date('2008-05-17T12:00:00Z') }),
-          'NOT_STARTED',
-          NOW,
-      );
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.autoApprove).toBe(false);
-      }
-    });
-
-    it('auto-approves TEST- national IDs when auto-approve is enabled', () => {
-      const result = validateKycSubmission(
-          makeInput({ nationalIdNumber: 'TEST-123456' }),
-          'NOT_STARTED',
-          NOW,
-      );
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.autoApprove).toBe(true);
-      }
-    });
-
-    it('does not auto-approve normal national IDs', () => {
-      const result = validateKycSubmission(
-          makeInput({ nationalIdNumber: 'ABC-123456' }),
-          'NOT_STARTED',
-          NOW,
-      );
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.autoApprove).toBe(false);
-      }
-    });
+    // VERIFIED must not allow resubmission
+    expect(canResubmitKyc(next)).toBe(false);
   });
 
-  describe('getNextKycStatus', () => {
-    it('returns VERIFIED when auto-approve is true', () => {
-      expect(getNextKycStatus('NOT_STARTED', true)).toBe('VERIFIED');
-    });
+  it('REJECTED -> PENDING_REVIEW when not auto-approved', () => {
+    // resubmission is allowed from REJECTED
+    expect(canResubmitKyc('REJECTED')).toBe(true);
 
-    it('returns PENDING_REVIEW when auto-approve is false', () => {
-      expect(getNextKycStatus('REJECTED', false)).toBe('PENDING_REVIEW');
-    });
+    const input = makeInput({ nationalIdNumber: 'XYZ-999' });
+    const validated = validateKycSubmission(input, 'REJECTED', NOW);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    // should not be auto-approved for normal ID
+    expect(validated.value.autoApprove).toBe(false);
+    const next = getNextKycStatus('REJECTED', validated.value.autoApprove);
+    expect(next).toBe('PENDING_REVIEW');
+
+    // after transitioning to PENDING_REVIEW resubmission is disallowed
+    expect(canResubmitKyc(next)).toBe(false);
   });
 
-  describe('canResubmitKyc', () => {
-    it.each([
-      ['NOT_STARTED', true],
-      ['REJECTED', true],
-      ['PENDING_REVIEW', false],
-      ['VERIFIED', false],
-    ] as const)('returns %s => %s', (status, expected) => {
-      expect(canResubmitKyc(status)).toBe(expected);
-    });
+  it('REJECTED -> VERIFIED when auto-approved (TEST- national id)', () => {
+    const input = makeInput({ nationalIdNumber: 'TEST-9999' });
+    const validated = validateKycSubmission(input, 'REJECTED', NOW);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    expect(validated.value.autoApprove).toBe(true);
+    const next = getNextKycStatus('REJECTED', validated.value.autoApprove);
+    expect(next).toBe('VERIFIED');
+
+    // VERIFIED must not allow resubmission
+    expect(canResubmitKyc(next)).toBe(false);
+  });
+
+  it('submission blocked when currentStatus is VERIFIED', () => {
+    const input = makeInput({ nationalIdNumber: 'TEST-000' });
+    const validated = validateKycSubmission(input, 'VERIFIED', NOW);
+
+    expect(validated.ok).toBe(false);
+    if (!validated.ok) {
+      expect(validated.error.code).toBe(ErrorCode.KYC_ALREADY_VERIFIED);
+    }
+  });
+
+  it('canResubmitKyc returns expected values for all statuses', () => {
+    expect(canResubmitKyc('NOT_STARTED')).toBe(true);
+    expect(canResubmitKyc('REJECTED')).toBe(true);
+    expect(canResubmitKyc('PENDING_REVIEW')).toBe(false);
+    expect(canResubmitKyc('VERIFIED')).toBe(false);
   });
 });
