@@ -6,10 +6,6 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
-  // Browser-driven e2e tests share a single dev-server backend and DB. Serialise
-  // them so concurrent withdrawals/deposits don't race against each other's
-  // balance/transaction assertions. The api-integration project uses its own
-  // testcontainer per file and isn't affected in practice.
   workers: 1,
   reporter: process.env['CI'] ? [['github'], ['list']] : 'list',
   use: {
