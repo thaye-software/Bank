@@ -86,7 +86,7 @@ jobs:
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
       # External APIs are mocked with msw in integration tests — real keys not needed
       ANTHROPIC_API_KEY: dummy-key
-      CURRENCY_API_KEY: dummy-key
+      CURRENCY_API_KEY: ${{ secrets.CURRENCY_API_KEY }}
       ENABLE_KYC_AUTO_APPROVE: "true"
     steps:
       - uses: actions/checkout@v4

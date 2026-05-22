@@ -179,7 +179,7 @@ describe('R1 — applicant age', () => {
 
 describe('R2 — KYC verification', () => {
   it('rejects when KYC is PENDING', () => {
-    const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING' });
+    const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING_REVIEW' });
     expect(result.rejectionCode).toBe(ErrorCode.KYC_NOT_VERIFIED);
   });
 
