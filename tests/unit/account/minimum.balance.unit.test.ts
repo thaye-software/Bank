@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import Decimal from 'decimal.js';
 import {
   checkPostTransactionBalance,
+  isOverdraftTriggered,
+  OVERDRAFT_FEE,
 } from '../../../src/domain/accounts/account.rules';
 import { ErrorCode } from '../../../src/shared/errors';
 
@@ -262,6 +264,88 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
           expect(result.ok).toBe(false);
           expect(result.error.code).toBe(ErrorCode.BELOW_MINIMUM_BALANCE);
         }
+      });
+    });
+  });
+});
+
+
+
+
+
+
+
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Overdraft fee policy (banking-rules.md §1.2)
+//
+//   "Each overdraft event incurs a flat $35.00 fee, charged immediately as a
+//    separate transaction."
+//
+// Two pure pieces of the rule are unit-testable here:
+//   (a) the fee amount itself — OVERDRAFT_FEE constant
+//   (b) the trigger decision — isOverdraftTriggered(currentBalance, amount)
+//       returns true iff (currentBalance - amount) < $0
+//
+// The "separate transaction" / atomicity claim is persistence behaviour and
+// is covered by the API integration test (§11 in withdrawals.api.test.ts).
+// ════════════════════════════════════════════════════════════════════════════
+describe('Overdraft fee policy', () => {
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // OVERDRAFT_FEE constant — pinned to $35.00
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('OVERDRAFT_FEE — flat per-event fee', () => {
+    it('should equal $35.00', () => {
+      expect(OVERDRAFT_FEE.toFixed(2)).toBe('35.00');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // isOverdraftTriggered — EP & BVA around the $0 post-balance boundary
+  //
+  // Test cases are parametrised on the desired post-balance and the body
+  // reconstructs (currentBalance, amount) so the post-transaction value
+  // lands exactly on the chosen point. Same pattern as the partitions above.
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('isOverdraftTriggered — EP & BVA around the $0 post-balance boundary', () => {
+
+        // ── Does-not-trigger partition: post-balance ≥ $0 ────────────────────────
+    describe('Does-not-trigger partition: post-balance ≥ $0 (no fee)', () => {
+      it.each<[string, Decimal]>([
+        ['BV MAX DECIMAL + $0.01',            MAX_DECIMAL.plus('0.01')],
+        ['BV MAX DECIMAL (upper boundary)',   MAX_DECIMAL],
+        ['BV MAX DECIMAL - $0.01',            MAX_DECIMAL.minus('0.01')],
+        ['EP $5,000.00 (mean value)',         new Decimal('5000')],
+        ['BV $0.01 (just above zero)',        new Decimal('0.01')],
+        ['BV $0.00 (lower boundary)',         new Decimal('0')],
+      ])('%s → no fee', (_label: string, postBalance: Decimal) => {
+        const triggered = isOverdraftTriggered(
+          new Decimal('0').plus(postBalance),
+          new Decimal('0'),
+        );
+
+        expect(triggered).toBe(false);
+      });
+    });
+
+    // ── Triggers partition: post-balance < $0 ────────────────────────────────
+    describe('Triggers partition: post-balance < $0 (fee charged)', () => {
+      it.each<[string, Decimal]>([
+        ['BV -$0.01 (upper boundary)',     new Decimal('-0.01')],
+        ['BV -$0.02 (just below boundary)',new Decimal('-0.02')],
+        ['EP -$5,000.00 (mean value)',     new Decimal('-5000')],
+        ['BV MIN DECIMAL - $0.01',         MIN_DECIMAL.minus('0.01')],
+        ['BV MIN DECIMAL',                 MIN_DECIMAL],
+        ['BV MIN DECIMAL + $0.01',         MIN_DECIMAL.plus('0.01')],
+      ])('%s → fee triggered', (_label: string, postBalance: Decimal) => {
+        const triggered = isOverdraftTriggered(
+          new Decimal('0'),
+          new Decimal('0').minus(postBalance),
+        );
+
+        expect(triggered).toBe(true);
       });
     });
   });
