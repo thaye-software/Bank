@@ -4,11 +4,11 @@
  * Rule under test: If requestedAmount > maxForScore  →  AMOUNT_EXCEEDS_CREDIT_LIMIT
  *
  * Tiers (src/domain/loans/loan.eligibility.ts):
- *   750–850 → $500,000
- *   700–749 → $250,000
- *   650–699 → $100,000
- *   600–649 →  $50,000
- *   500–599 →  $20,000
+ *   750-850 → $500,000
+ *   700-749 → $250,000
+ *   650-699 → $100,000
+ *   600-649 →  $50,000
+ *   500-599 →  $20,000
  *
  * Techniques: Equivalence Partitioning (EP) and Boundary Value Analysis (BVA).
  *
@@ -34,7 +34,6 @@ import { ErrorCode } from '../../../src/shared/errors';
 const BASE_INPUT: LoanApplicationInput = {
   applicantAge: 35,
   annualIncome: 10_000_000,
-  monthlyDebt: 0,
   requestedAmount: 1_000,
   requestedTermMonths: 60,
   creditScore: 700,
@@ -43,185 +42,211 @@ const BASE_INPUT: LoanApplicationInput = {
   existingLoansCount: 0,
 };
 
-function evaluate(input: LoanApplicationInput) {
+
+
+function approved(input: LoanApplicationInput): LoanApproval {
   const result = evaluateLoanApplication(input);
   expect(result.ok).toBe(true);
-  return (result as { ok: true; value: LoanApproval | LoanRejection }).value;
-}
-
-function expectApproved(input: LoanApplicationInput): LoanApproval {
-  const value = evaluate(input);
+  const value = (result as { ok: true; value: LoanApproval }).value;
   expect(value.decision).toBe('APPROVED');
-  return value as LoanApproval;
+  return value;
 }
 
-function expectExceedsCreditLimit(input: LoanApplicationInput): LoanRejection {
-  const value = evaluate(input);
+function exceededCreditLimit(input: LoanApplicationInput): LoanRejection {
+  const result = evaluateLoanApplication(input);
+  expect(result.ok).toBe(true);
+  const value = (result as { ok: true; value: LoanRejection }).value;
   expect(value.decision).toBe('REJECTED');
-  const rejection = value as LoanRejection;
-  expect(rejection.rejectionCode).toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-  return rejection;
+  expect(value.rejectionCode).toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
+  return value;
 }
 
-interface TierCase {
-  readonly label: string;
-  readonly scoreMin: number;
-  readonly scoreMax: number;
-  readonly scoreMid: number;
-  readonly cap: number;
+function rejected(input: LoanApplicationInput): LoanRejection {
+  const result = evaluateLoanApplication(input);
+  expect(result.ok).toBe(true);
+  const value = (result as { ok: true; value: LoanRejection }).value;
+  expect(value.decision).toBe('REJECTED');
+  return value;
 }
 
-const TIERS: readonly TierCase[] = [
-  { label: '750-850 ($500,000)', scoreMin: 750, scoreMax: 850, scoreMid: 800, cap: 500_000 },
-  { label: '700-749 ($250,000)', scoreMin: 700, scoreMax: 749, scoreMid: 725, cap: 250_000 },
-  { label: '650-699 ($100,000)', scoreMin: 650, scoreMax: 699, scoreMid: 675, cap: 100_000 },
-  { label: '600-649 ($50,000)',  scoreMin: 600, scoreMax: 649, scoreMid: 625, cap:  50_000 },
-  { label: '500-599 ($20,000)',  scoreMin: 500, scoreMax: 599, scoreMid: 550, cap:  20_000 },
+// ---------------------------------------------------------------------------
+// Row types
+// ---------------------------------------------------------------------------
+
+// [label, midScore, cap, epAmount, epOverAmount]
+// epAmount     = representative interior value (well under cap)
+// epOverAmount = representative value above cap but within global max ($500k)
+type TierEpRow = [string, number, number, number, number];
+
+// [label, score, cap]
+type ScoreAmountRow = [string, number, number];
+
+// ---------------------------------------------------------------------------
+// Data tables
+// ---------------------------------------------------------------------------
+
+// All 5 tiers — used for EP valid and all BVA boundary tests.
+const ALL_TIERS: TierEpRow[] = [
+  ['tier 750-850 (cap $500,000)', 800, 500_000, 250_000, 375_000],
+  ['tier 700-749 (cap $250,000)', 725, 250_000, 125_000, 375_000],
+  ['tier 650-699 (cap $100,000)', 675, 100_000,  50_000, 150_000],
+  ['tier 600-649 (cap $50,000)',  625,  50_000,  25_000,  75_000],
+  ['tier 500-599 (cap $20,000)',  550,  20_000,  10_000,  30_000],
+];
+
+// Tiers 2-5 only: cap < global MAX_LOAN_AMOUNT, so cap+1 triggers
+// AMOUNT_EXCEEDS_CREDIT_LIMIT rather than LOAN_AMOUNT_TOO_HIGH (R6).
+const CAPPED_TIERS: TierEpRow[] = ALL_TIERS.slice(1);
+
+// All lower and upper credit-score edges per tier.
+// Used for BVA on credit score: score at edge + amount=cap → APPROVED.
+const ALL_SCORE_EDGES: ScoreAmountRow[] = [
+  ['score 750 (lower edge, tier 750-850)', 750, 500_000],
+  ['score 850 (upper edge, tier 750-850)', 850, 500_000],
+  ['score 700 (lower edge, tier 700-749)', 700, 250_000],
+  ['score 749 (upper edge, tier 700-749)', 749, 250_000],
+  ['score 650 (lower edge, tier 650-699)', 650, 100_000],
+  ['score 699 (upper edge, tier 650-699)', 699, 100_000],
+  ['score 600 (lower edge, tier 600-649)', 600,  50_000],
+  ['score 649 (upper edge, tier 600-649)', 649,  50_000],
+  ['score 500 (lower edge, tier 500-599)', 500,  20_000],
+  ['score 599 (upper edge, tier 500-599)', 599,  20_000],
+];
+
+// Edges for tiers 2-5 only: cap+1 → AMOUNT_EXCEEDS_CREDIT_LIMIT.
+const CAPPED_SCORE_EDGES: ScoreAmountRow[] = [
+  ['score 700 (lower edge, tier 700-749)', 700, 250_000],
+  ['score 749 (upper edge, tier 700-749)', 749, 250_000],
+  ['score 650 (lower edge, tier 650-699)', 650, 100_000],
+  ['score 699 (upper edge, tier 650-699)', 699, 100_000],
+  ['score 600 (lower edge, tier 600-649)', 600,  50_000],
+  ['score 649 (upper edge, tier 600-649)', 649,  50_000],
+  ['score 500 (lower edge, tier 500-599)', 500,  20_000],
+  ['score 599 (upper edge, tier 500-599)', 599,  20_000],
 ];
 
 // ===========================================================================
-// Single top-level suite — guarantees Vitest sees at least one describe block.
+// Tests
 // ===========================================================================
 
 describe('AMOUNT_EXCEEDS_CREDIT_LIMIT — EP + BVA', () => {
 
-  // ---- Equivalence Partitioning ----------------------------------------
-  describe('Equivalence Partitioning [EP]', () => {
-    for (const t of TIERS) {
-      describe(`tier ${t.label}`, () => {
-        it('[EP] valid class: amount well under cap is not rejected for credit limit', () => {
-          const value = evaluate({
-            ...BASE_INPUT,
-            creditScore: t.scoreMid,
-            requestedAmount: Math.max(500, Math.floor(t.cap / 2)),
-          });
-          if (value.decision === 'REJECTED') {
-            expect(value.rejectionCode).not.toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-          } else {
-            expect(value.decision).toBe('APPROVED');
-          }
-        });
+  // ---- Equivalence Partitioning -------------------------------------------
 
-        if (t.cap < 500_000) {
-          it('[EP] invalid class: amount above cap → AMOUNT_EXCEEDS_CREDIT_LIMIT', () => {
-            expectExceedsCreditLimit({
-              ...BASE_INPUT,
-              creditScore: t.scoreMid,
-              requestedAmount: t.cap * 1.5, 
-            });
-          });
-        }
-      });
-    }
+  describe('EP — valid partition: amount well within cap → APPROVED', () => {
+    it.each<TierEpRow>(ALL_TIERS)(
+      '%s: mid-score, amount at half-cap → APPROVED',
+      (_label, scoreMid, _cap, epAmount) => {
+        approved({ ...BASE_INPUT, creditScore: scoreMid, requestedAmount: epAmount });
+      },
+    );
   });
 
-  // ---- Boundary Value Analysis on amount -------------------------------
-  describe('Boundary Value Analysis on amount [BVA]', () => {
-    for (const t of TIERS) {
-      describe(`tier ${t.label}`, () => {
-        it(`[BVA] amount = cap - 1 ($${t.cap - 1}) → not rejected for credit limit`, () => {
-          const value = evaluate({
-            ...BASE_INPUT,
-            creditScore: t.scoreMid,
-            requestedAmount: t.cap - 1,
-          });
-          if (value.decision === 'REJECTED') {
-            expect(value.rejectionCode).not.toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-          }
-        });
-
-        it(`[BVA] amount = cap ($${t.cap}) exactly → APPROVED`, () => {
-          expectApproved({
-            ...BASE_INPUT,
-            creditScore: t.scoreMid,
-            requestedAmount: t.cap,
-          });
-        });
-
-        if (t.cap < 500_000) {
-          it(`[BVA] amount = cap + 1 ($${t.cap + 1}) → AMOUNT_EXCEEDS_CREDIT_LIMIT`, () => {
-            expectExceedsCreditLimit({
-              ...BASE_INPUT,
-              creditScore: t.scoreMid,
-              requestedAmount: t.cap + 1,
-            });
-          });
-        } else {
-          it(`[BVA] amount = cap + 1 ($${t.cap + 1}) → LOAN_AMOUNT_TOO_HIGH (R6 wins)`, () => {
-            const value = evaluate({
-              ...BASE_INPUT,
-              creditScore: t.scoreMid,
-              requestedAmount: t.cap + 1,
-            });
-            expect(value.decision).toBe('REJECTED');
-            expect((value as LoanRejection).rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
-          });
-        }
-      });
-    }
+  describe('EP — invalid partition: amount above cap → AMOUNT_EXCEEDS_CREDIT_LIMIT', () => {
+    // Tier 1 excluded: its cap equals the global max, so cap+1 triggers R6 instead.
+    it.each<TierEpRow>(CAPPED_TIERS)(
+      '%s: mid-score, amount at 1.5× cap → AMOUNT_EXCEEDS_CREDIT_LIMIT',
+      (_label, scoreMid, _cap, _epAmount, epOverAmount) => {
+        exceededCreditLimit({ ...BASE_INPUT, creditScore: scoreMid, requestedAmount: epOverAmount });
+      },
+    );
   });
 
-  // ---- BVA on creditScore at tier edges --------------------------------
-  describe('BVA on creditScore at tier edges [BVA]', () => {
-    for (const t of TIERS) {
-      describe(`tier ${t.label}`, () => {
-        it(`[BVA] score = ${t.scoreMin} (lower edge) uses cap $${t.cap}`, () => {
-          if (t.cap < 500_000) {
-            expectExceedsCreditLimit({
-              ...BASE_INPUT,
-              creditScore: t.scoreMin,
-              requestedAmount: t.cap + 1,
-            });
-          }
-          expectApproved({
-            ...BASE_INPUT,
-            creditScore: t.scoreMin,
-            requestedAmount: t.cap,
-          });
-        });
+  // ---- BVA on amount -------------------------------------------------------
 
-        it(`[BVA] score = ${t.scoreMax} (upper edge) uses cap $${t.cap}`, () => {
-          if (t.cap < 500_000) {
-            expectExceedsCreditLimit({
-              ...BASE_INPUT,
-              creditScore: t.scoreMax,
-              requestedAmount: t.cap + 1,
-            });
-          }
-          expectApproved({
-            ...BASE_INPUT,
-            creditScore: t.scoreMax,
-            requestedAmount: t.cap,
-          });
-        });
-      });
-    }
+  describe('BVA — amount = cap − 1 → APPROVED', () => {
+    it.each<TierEpRow>(ALL_TIERS)(
+      '%s: amount = cap − 1 → APPROVED',
+      (_label, scoreMid, cap) => {
+        approved({ ...BASE_INPUT, creditScore: scoreMid, requestedAmount: cap - 1 });
+      },
+    );
   });
 
-  // ---- Invalid score partitions ---------------------------------------
-  describe('invalid credit-score partitions [EP][BVA]', () => {
-    it('[BVA] score = 499 (just below 500) → CREDIT_SCORE_TOO_LOW (R4 wins)', () => {
-      const value = evaluate({ ...BASE_INPUT, creditScore: 499, requestedAmount: 1_000 });
-      expect(value.decision).toBe('REJECTED');
-      expect((value as LoanRejection).rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
-    });
+  describe('BVA — amount = cap exactly → APPROVED', () => {
+    it.each<TierEpRow>(ALL_TIERS)(
+      '%s: amount = cap → APPROVED',
+      (_label, scoreMid, cap) => {
+        approved({ ...BASE_INPUT, creditScore: scoreMid, requestedAmount: cap });
+      },
+    );
+  });
 
-    it('[BVA] score = 851 (just above 850) → CREDIT_SCORE_TOO_LOW (out of range)', () => {
-      const value = evaluate({ ...BASE_INPUT, creditScore: 851, requestedAmount: 1_000 });
-      expect(value.decision).toBe('REJECTED');
-      expect((value as LoanRejection).rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
+  describe('BVA — amount = cap + 1 → AMOUNT_EXCEEDS_CREDIT_LIMIT (tiers 2-5)', () => {
+    // Tier 1 excluded — see dedicated test below.
+    it.each<TierEpRow>(CAPPED_TIERS)(
+      '%s: amount = cap + 1 → AMOUNT_EXCEEDS_CREDIT_LIMIT',
+      (_label, scoreMid, cap) => {
+        exceededCreditLimit({ ...BASE_INPUT, creditScore: scoreMid, requestedAmount: cap + 1 });
+      },
+    );
+  });
+
+  // Tier 1 special case: cap ($500,000) === global MAX_LOAN_AMOUNT,
+  // so R6 (LOAN_AMOUNT_TOO_HIGH) fires before the tier-cap check.
+  it('BVA — tier 750-850: amount = $500,001 (cap + 1) → LOAN_AMOUNT_TOO_HIGH (R6 wins)', () => {
+    const result = rejected({ ...BASE_INPUT, creditScore: 800, requestedAmount: 500_001 });
+
+    expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
+  });
+
+  // ---- BVA on credit score at tier edges -----------------------------------
+
+  describe('BVA — score at tier edge, amount = cap → APPROVED', () => {
+    it.each<ScoreAmountRow>(ALL_SCORE_EDGES)(
+      '%s, amount = cap → APPROVED',
+      (_label, score, cap) => {
+        approved({ ...BASE_INPUT, creditScore: score, requestedAmount: cap });
+      },
+    );
+  });
+
+  describe('BVA — score at tier edge, amount = cap + 1 → AMOUNT_EXCEEDS_CREDIT_LIMIT (tiers 2-5)', () => {
+    it.each<ScoreAmountRow>(CAPPED_SCORE_EDGES)(
+      '%s, amount = cap + 1 → AMOUNT_EXCEEDS_CREDIT_LIMIT',
+      (_label, score, cap) => {
+        exceededCreditLimit({ ...BASE_INPUT, creditScore: score, requestedAmount: cap + 1 });
+      },
+    );
+  });
+
+  // Tier 1 score edges: cap+1 still hits R6, not the credit-limit check.
+  it.each<ScoreAmountRow>([
+    ['score 750 (lower edge, tier 750-850)', 750, 500_000],
+    ['score 850 (upper edge, tier 750-850)', 850, 500_000],
+  ])(
+    'BVA — %s, amount = cap + 1 → LOAN_AMOUNT_TOO_HIGH (R6 wins)',
+    (_label, score, cap) => {
+      const result = rejected({ ...BASE_INPUT, creditScore: score, requestedAmount: cap + 1 });
+
+      expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
+    },
+  );
+
+  // ---- Invalid credit-score partitions -------------------------------------
+
+  describe('EP/BVA — credit score outside eligible range → CREDIT_SCORE_TOO_LOW', () => {
+    it.each<[string, number]>([
+      ['BV score 499 (just below tier 5 lower boundary)', 499],
+      ['BV score 851 (just above tier 1 upper boundary)', 851],
+    ])('%s → CREDIT_SCORE_TOO_LOW', (_label, creditScore) => {
+      const result = rejected({ ...BASE_INPUT, creditScore, requestedAmount: 1_000 });
+
+      expect(result.rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
     });
   });
 
-  // ---- Rejection message ----------------------------------------------
+  // ---- Rejection message ---------------------------------------------------
+
   describe('rejection message content', () => {
     it('includes the tier-specific maximum in the rejection message', () => {
-      const rejection = expectExceedsCreditLimit({
+      const result = exceededCreditLimit({
         ...BASE_INPUT,
         creditScore: 550,
         requestedAmount: 20_001,
       });
-      expect(rejection.rejectionMessage).toContain('20000');
+
+      expect(result.rejectionMessage).toContain('20000');
     });
   });
 });

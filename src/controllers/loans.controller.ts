@@ -14,7 +14,6 @@ const ApplyLoanSchema = z.object({
   requestedAmount: z.number().finite().positive(),
   requestedTermMonths: z.number().int().positive(),
   annualIncome: z.number().finite().nonnegative(),
-  monthlyDebt: z.number().finite().nonnegative(),
   creditScore: z.number().int().min(0).max(850),
   employmentStatus: z.enum(['EMPLOYED', 'SELF_EMPLOYED', 'UNEMPLOYED', 'RETIRED']),
   applicantAge: z.number().int().min(0).max(120),
@@ -44,7 +43,6 @@ export function makeLoansController(deps: AppDeps) {
     const input: LoanApplicationInput = {
       applicantAge: body.applicantAge,
       annualIncome: body.annualIncome,
-      monthlyDebt: body.monthlyDebt,
       requestedAmount: body.requestedAmount,
       requestedTermMonths: body.requestedTermMonths,
       creditScore: body.creditScore,

@@ -22,8 +22,8 @@ import type { KycStatus, EmploymentStatus } from '../../../src/domain/accounts/a
 // IMPORTANT — rules are evaluated in order, first-failure-wins
 // (loan.eligibility.ts:202). To isolate the rule under test, every OTHER field
 // is held at an approvable value (via buildLoanApplication). Where a rule's
-// valid partition needs extra headroom to reach APPROVED (credit-tier cap and
-// DTI live downstream of R5/R6), the section's local evaluator widens the base.
+// valid partition needs extra headroom to reach APPROVED (credit-tier cap lives
+// downstream of R5/R6), the section's local evaluator widens the base.
 //
 // Monetary fields (requestedAmount, annualIncome) are plain `number`s here, so
 // $0.01 precision is expressed as numeric literals (499.99, 500000.01, …).
@@ -328,7 +328,7 @@ describe('R4 — creditScore (boundary 500, valid 500..850)', () => {
 // One variable, two boundaries, split into five partitions (cf. the withdrawal
 // amount table). The local evaluator uses a high-credit, high-income, long-term,
 // zero-debt base so the ENTIRE valid range clears the downstream tier-cap and
-// DTI checks and reaches APPROVED. R6 (in the rule chain) fires before the tier
+// reaches APPROVED. R6 (in the rule chain) fires before the tier
 // cap, so amounts > $500,000 yield LOAN_AMOUNT_TOO_HIGH.
 //
 // ┌──────────────┬──────────────────────────────────┬──────────────┬────────────────────────────────────────────────────────────────┐
@@ -348,7 +348,6 @@ describe('R5/R6 — requestedAmount range $500.00 .. $500,000.00', () => {
         requestedAmount,
         creditScore: 800,
         annualIncome: 600_000,
-        monthlyDebt: 0,
         requestedTermMonths: 60,
       }),
     );
@@ -613,10 +612,8 @@ describe('R8 — existingLoansCount (boundary 3, one-sided)', () => {
 // R9. annualIncome — INVALID_INCOME (boundary $0.00, <= 0 rejected)
 // =============================================================================
 //
-// The valid partition asserts only that R9 does NOT fire (income > 0). Income
-// just above the boundary ($0.01) passes R9 but cannot satisfy the downstream
-// DTI check, so it is rejected for DTI_TOO_HIGH, not INVALID_INCOME. "Not
-// INVALID_INCOME" is therefore the strongest claim holding across the partition.
+// The valid partition asserts only that R9 does NOT fire (income > 0). "Not
+// INVALID_INCOME" is the strongest claim holding across the entire valid partition.
 //
 // ┌──────────────┬──────────────────────────────────┬──────────────┬────────────────────────────────────────────────────┐
 // │ Partition    │ Range                            │ EP value     │ BV test case values                                │

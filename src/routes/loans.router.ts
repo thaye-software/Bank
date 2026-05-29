@@ -11,7 +11,6 @@ const applySchema = {
     requestedAmount: z.number().positive(),
     requestedTermMonths: z.number().int(),
     annualIncome: z.number().positive(),
-    monthlyDebt: z.number().min(0),
     creditScore: z.number().int().min(300).max(850),
     employmentStatus: z.enum(['EMPLOYED', 'SELF_EMPLOYED', 'UNEMPLOYED', 'RETIRED']),
     applicantAge: z.number().int().min(0),

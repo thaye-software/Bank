@@ -6,7 +6,6 @@ export interface LoanApplicationPayload {
   requestedAmount: number;
   requestedTermMonths: number;
   annualIncome: number;
-  monthlyDebt: number;
   creditScore: number;
   employmentStatus: EmploymentStatus;
   applicantAge: number;

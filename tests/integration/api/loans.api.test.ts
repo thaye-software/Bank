@@ -90,7 +90,6 @@ async function seedApprovedLoanApplication(userId: string, accountId: string) {
             requestedAmount: '10000.00',
             requestedTermMonths: 36,
             annualIncome: '90000.00',
-            monthlyDebt: '500.00',
             creditScore: 720,
             employmentStatus: 'EMPLOYED',
             decision: 'APPROVED',
@@ -114,7 +113,6 @@ test.describe('POST /api/v1/loans/apply', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 30,
@@ -135,7 +133,6 @@ test.describe('POST /api/v1/loans/apply', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 30,
@@ -159,7 +156,6 @@ test.describe('POST /api/v1/loans/apply', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 30,
@@ -180,7 +176,6 @@ test.describe('POST /api/v1/loans/apply', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 17,
@@ -228,7 +223,6 @@ test.describe('POST /api/v1/loans/apply', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 30,
@@ -254,19 +248,18 @@ test.describe('POST /api/v1/loans/apply', () => {
         const { token, userId } = await registerUser();
         const account = await createActiveAccountForUser(userId);
 
-        const res = await apiContext.post('/api/v1/loans/apply', {
-            headers: { Authorization: `Bearer ${token}` },
-            data: {
-                accountId: account.id,
-                requestedAmount: 15000,
-                requestedTermMonths: 36,
-                annualIncome: 120000,
-                monthlyDebt: 400,
-                creditScore: 760,
-                employmentStatus: 'EMPLOYED',
-                applicantAge: 32,
-            },
-        });
+            const res = await apiContext.post('/api/v1/loans/apply', {
+                headers: { Authorization: `Bearer ${token}` },
+                data: {
+                    accountId: account.id,
+                    requestedAmount: 15000,
+                    requestedTermMonths: 36,
+                    annualIncome: 120000,
+                    creditScore: 760,
+                    employmentStatus: 'EMPLOYED',
+                    applicantAge: 32,
+                },
+            });
 
         expect(res.status()).toBe(201);
 
@@ -307,7 +300,6 @@ test.describe('GET /api/v1/loans', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 17,
@@ -321,7 +313,6 @@ test.describe('GET /api/v1/loans', () => {
                 requestedAmount: 10000,
                 requestedTermMonths: 36,
                 annualIncome: 90000,
-                monthlyDebt: 500,
                 creditScore: 720,
                 employmentStatus: 'EMPLOYED',
                 applicantAge: 17,
