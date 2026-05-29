@@ -133,6 +133,8 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
         );
 
         expect(result.ok).toBe(false);
+        
+        //@ts-expect-error result.error is BusinessRuleError
         expect(result.error.code).toBe(ErrorCode.BELOW_MINIMUM_BALANCE);
       });
     });
@@ -155,6 +157,7 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
         );
 
         expect(result.ok).toBe(false);
+        //@ts-expect-error result.error is BusinessRuleError
         expect(result.error.code).toBe(ErrorCode.BELOW_MINIMUM_BALANCE);
       });
     });
@@ -181,6 +184,7 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
           expect(result.ok).toBe(true);
         } else {
           expect(result.ok).toBe(false);
+          //@ts-expect-error result.error is BusinessRuleError
           expect(result.error.code).toBe(ErrorCode.BELOW_MINIMUM_BALANCE);
         }
       });
@@ -233,7 +237,7 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
         );
 
         expect(result.ok).toBe(false);
-
+        //@ts-expect-error result.error is BusinessRuleError
         expect(result.error.code).toBe(ErrorCode.BELOW_MINIMUM_BALANCE);
       });
     });
