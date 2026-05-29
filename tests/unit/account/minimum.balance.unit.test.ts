@@ -96,9 +96,10 @@ describe('checkPostTransactionBalance — EP & BVA for minimum balance rules', (
       it.each<[string, Decimal]>([
         ['BV -$500.00 (lower boundary)',     new Decimal('-500')],
         ['BV -$499.99 (just inside)',        new Decimal('-499.99')],
-        ['EP -$250    (mean value)',        new Decimal('-250')],
+        ['EP -$250    (mean value)',         new Decimal('-250')],
         ['BV MAX DECIMAL - $0.01',           MAX_DECIMAL.minus('0.01')],
         ['BV MAX DECIMAL (upper boundary)',  MAX_DECIMAL],
+        ['BV MAX DECIMAL + $0.01',           MAX_DECIMAL.plus('0.01')],
       ])('%s → ok', (_label: string, postBalance: Decimal) => {
         const result = checkPostTransactionBalance(
           new Decimal('0').plus(postBalance),
