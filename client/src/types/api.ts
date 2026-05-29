@@ -27,19 +27,12 @@ export interface Transaction {
   createdAt: string;
 }
 
-export interface LoanAssessment {
-  riskLevel: 'LOW' | 'MODERATE' | 'HIGH';
-  summary: string;
-  watchPoints: string[];
-}
-
 export interface LoanResult {
   decision: LoanDecision;
   approvedAmount?: number;
   apr?: number;
   termMonths?: number;
   monthlyPayment?: number;
-  assessment?: LoanAssessment | null;
   errorCode?: string;
   message?: string;
 }
@@ -84,6 +77,5 @@ export interface LoanApplicationRecord {
   apr?: number;
   monthlyPayment?: number;
   rejectionCode?: string;
-  assessment?: LoanAssessment;
   createdAt: string;
 }

@@ -54,7 +54,6 @@
     "test:spike:mixed": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/spike/mixed-workload.spike.jmx"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^2.4.3",

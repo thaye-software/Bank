@@ -10,14 +10,8 @@ const envSchema = z.object({
   TEST_DATABASE_URL: z.string().optional(),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default('7d'),
-  ANTHROPIC_API_KEY: z.string().min(1),
-  ASSESSMENT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
   CURRENCY_API_KEY: z.string().min(1),
   ENABLE_KYC_AUTO_APPROVE: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  ENABLE_REAL_AI_TESTS: z
     .string()
     .transform((v) => v === 'true')
     .default('false'),

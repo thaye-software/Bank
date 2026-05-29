@@ -98,9 +98,6 @@ async function seedApprovedLoanApplication(userId: string, accountId: string) {
             apr: '0.0700',
             monthlyPayment: '308.77',
             rejectionCode: null,
-            assessmentRiskLevel: 'LOW',
-            assessmentSummary: 'Seeded approved loan application for testing.',
-            assessmentWatchPoints: [],
         },
     });
 }
@@ -253,48 +250,42 @@ test.describe('POST /api/v1/loans/apply', () => {
         expect(body.data.rejectionCode).toBe('TOO_MANY_ACTIVE_LOANS');
     });
 
-    // Approved-path test: only register as a real test when ENABLE_REAL_AI_TESTS === 'true'.
-    if (process.env.ENABLE_REAL_AI_TESTS === 'true') {
-        test('should return 201 for an eligible application', async () => {
-            const { token, userId } = await registerUser();
-            const account = await createActiveAccountForUser(userId);
+    test('should return 201 for an eligible application', async () => {
+        const { token, userId } = await registerUser();
+        const account = await createActiveAccountForUser(userId);
 
-            const res = await apiContext.post('/api/v1/loans/apply', {
-                headers: { Authorization: `Bearer ${token}` },
-                data: {
-                    accountId: account.id,
-                    requestedAmount: 15000,
-                    requestedTermMonths: 36,
-                    annualIncome: 120000,
-                    monthlyDebt: 400,
-                    creditScore: 760,
-                    employmentStatus: 'EMPLOYED',
-                    applicantAge: 32,
-                },
-            });
-
-            expect(res.status()).toBe(201);
-
-            const body = await res.json() as {
-                success: boolean;
-                data: {
-                    decision: 'APPROVED';
-                    approvedAmount: number;
-                    apr: number;
-                    monthlyPayment: number;
-                    assessment?: unknown;
-                };
-            };
-
-            expect(body.success).toBe(true);
-            expect(body.data.decision).toBe('APPROVED');
-            expect(body.data.approvedAmount).toBe(15000);
-            expect(body.data.apr).toBeGreaterThan(0);
-            expect(body.data.monthlyPayment).toBeGreaterThan(0);
+        const res = await apiContext.post('/api/v1/loans/apply', {
+            headers: { Authorization: `Bearer ${token}` },
+            data: {
+                accountId: account.id,
+                requestedAmount: 15000,
+                requestedTermMonths: 36,
+                annualIncome: 120000,
+                monthlyDebt: 400,
+                creditScore: 760,
+                employmentStatus: 'EMPLOYED',
+                applicantAge: 32,
+            },
         });
-    } else {
-        test.skip('should return 201 for an eligible application, Set ENABLE_REAL_AI_TESTS=true to run the approved-path test', async () => {});
-    }
+
+        expect(res.status()).toBe(201);
+
+        const body = await res.json() as {
+            success: boolean;
+            data: {
+                decision: 'APPROVED';
+                approvedAmount: number;
+                apr: number;
+                monthlyPayment: number;
+            };
+        };
+
+        expect(body.success).toBe(true);
+        expect(body.data.decision).toBe('APPROVED');
+        expect(body.data.approvedAmount).toBe(15000);
+        expect(body.data.apr).toBeGreaterThan(0);
+        expect(body.data.monthlyPayment).toBeGreaterThan(0);
+    });
 });
 
 // ============================================================================

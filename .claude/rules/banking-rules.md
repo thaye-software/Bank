@@ -170,28 +170,6 @@ DTI = (monthlyDebt + proposedMonthlyPayment) / (annualIncome / 12)
 If all checks pass: `APPROVED` with `{ approvedAmount, apr, termMonths, monthlyPayment }`.  
 All decisions (approved and rejected) are persisted to `loan_applications`.
 
-### 6.7 Loan Assessment Agent (AI narrative)
-
-After a rule-based `APPROVED` decision, `loan.assessment.agent.ts` calls the Claude API to produce a natural-language risk summary displayed in the loan officer UI. The rule-based decision is **not affected** by the agent output — it is purely informational.
-
-**Input:** applicant profile (age, income, credit score, employment status, DTI, requested amount, term).
-
-**Expected output shape:**
-```json
-{
-  "riskLevel": "LOW" | "MODERATE" | "HIGH",
-  "summary": "<2-3 sentence narrative>",
-  "watchPoints": ["<string>"]
-}
-```
-
-**Constraints:**
-- Only called on `APPROVED` outcomes. Rejected applications never invoke Claude.
-- If the Claude API call fails, the loan approval still succeeds — return approval with `assessment: null` and log at `warn`.
-- Use prompt caching: the system prompt is static — mark it with `cache_control: { type: "ephemeral" }`.
-- Model: `claude-haiku-4-5-20251001` (fast, low-cost for structured output).
-- `ANTHROPIC_API_KEY` must be present and Zod-validated at startup.
-
 ---
 
 ## 7. Currency Conversion
