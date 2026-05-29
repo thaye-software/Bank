@@ -72,11 +72,11 @@ interface TierCase {
 }
 
 const TIERS: readonly TierCase[] = [
-  { label: '750–850 ($500,000)', scoreMin: 750, scoreMax: 850, scoreMid: 800, cap: 500_000 },
-  { label: '700–749 ($250,000)', scoreMin: 700, scoreMax: 749, scoreMid: 725, cap: 250_000 },
-  { label: '650–699 ($100,000)', scoreMin: 650, scoreMax: 699, scoreMid: 675, cap: 100_000 },
-  { label: '600–649 ($50,000)',  scoreMin: 600, scoreMax: 649, scoreMid: 625, cap:  50_000 },
-  { label: '500–599 ($20,000)',  scoreMin: 500, scoreMax: 599, scoreMid: 550, cap:  20_000 },
+  { label: '750-850 ($500,000)', scoreMin: 750, scoreMax: 850, scoreMid: 800, cap: 500_000 },
+  { label: '700-749 ($250,000)', scoreMin: 700, scoreMax: 749, scoreMid: 725, cap: 250_000 },
+  { label: '650-699 ($100,000)', scoreMin: 650, scoreMax: 699, scoreMid: 675, cap: 100_000 },
+  { label: '600-649 ($50,000)',  scoreMin: 600, scoreMax: 649, scoreMid: 625, cap:  50_000 },
+  { label: '500-599 ($20,000)',  scoreMin: 500, scoreMax: 599, scoreMid: 550, cap:  20_000 },
 ];
 
 // ===========================================================================
@@ -107,7 +107,7 @@ describe('AMOUNT_EXCEEDS_CREDIT_LIMIT — EP + BVA', () => {
             expectExceedsCreditLimit({
               ...BASE_INPUT,
               creditScore: t.scoreMid,
-              requestedAmount: t.cap + 10_000,
+              requestedAmount: t.cap * 1.5, 
             });
           });
         }
