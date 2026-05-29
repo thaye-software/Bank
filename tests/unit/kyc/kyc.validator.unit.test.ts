@@ -32,67 +32,28 @@ function makeInput(overrides: Partial<KycSubmissionInput> = {}): KycSubmissionIn
 }
 
 describe('KYC state transitions (composed)', () => {
-  it('NOT_STARTED -> PENDING_REVIEW when not auto-approved', () => {
-    const input = makeInput({ nationalIdNumber: 'ABC-000' });
-    // assert initial resubmission allowance
-    expect(canResubmitKyc('NOT_STARTED')).toBe(true);
+  type StartStatus = 'NOT_STARTED' | 'REJECTED';
+  type NextStatus  = 'PENDING_REVIEW' | 'VERIFIED';
 
-    const validated = validateKycSubmission(input, 'NOT_STARTED', NOW);
+  it.each<[string, StartStatus, string, boolean, NextStatus]>([
+    // [label, startStatus, nationalIdNumber, expectedAutoApprove, expectedNextStatus]
+    ['NOT_STARTED -> PENDING_REVIEW when not auto-approved',           'NOT_STARTED', 'ABC-000',   false, 'PENDING_REVIEW'],
+    ['NOT_STARTED -> VERIFIED when auto-approved (TEST- national id)', 'NOT_STARTED', 'TEST-0001', true,  'VERIFIED'],
+    ['REJECTED    -> PENDING_REVIEW when not auto-approved',           'REJECTED',    'XYZ-999',   false, 'PENDING_REVIEW'],
+    ['REJECTED    -> VERIFIED when auto-approved (TEST- national id)', 'REJECTED',    'TEST-9999', true,  'VERIFIED'],
+  ])('%s', (_label, startStatus, nationalIdNumber, expectedAutoApprove, expectedNext) => {
+    // resubmission must be allowed from the starting status (precondition for transition)
+    expect(canResubmitKyc(startStatus)).toBe(true);
+
+    const validated = validateKycSubmission(makeInput({ nationalIdNumber }), startStatus, NOW);
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
 
-    expect(validated.value.autoApprove).toBe(false);
-    const next = getNextKycStatus('NOT_STARTED', validated.value.autoApprove);
-    expect(next).toBe('PENDING_REVIEW');
+    expect(validated.value.autoApprove).toBe(expectedAutoApprove);
+    const next = getNextKycStatus(startStatus, validated.value.autoApprove);
+    expect(next).toBe(expectedNext);
 
-    // after transition to PENDING_REVIEW resubmission should be disallowed
-    expect(canResubmitKyc(next)).toBe(false);
-  });
-
-  it('NOT_STARTED -> VERIFIED when auto-approved (TEST- national id)', () => {
-    const input = makeInput({ nationalIdNumber: 'TEST-0001' });
-
-    const validated = validateKycSubmission(input, 'NOT_STARTED', NOW);
-    expect(validated.ok).toBe(true);
-    if (!validated.ok) return;
-
-    expect(validated.value.autoApprove).toBe(true);
-    const next = getNextKycStatus('NOT_STARTED', validated.value.autoApprove);
-    expect(next).toBe('VERIFIED');
-
-    // VERIFIED must not allow resubmission
-    expect(canResubmitKyc(next)).toBe(false);
-  });
-
-  it('REJECTED -> PENDING_REVIEW when not auto-approved', () => {
-    // resubmission is allowed from REJECTED
-    expect(canResubmitKyc('REJECTED')).toBe(true);
-
-    const input = makeInput({ nationalIdNumber: 'XYZ-999' });
-    const validated = validateKycSubmission(input, 'REJECTED', NOW);
-    expect(validated.ok).toBe(true);
-    if (!validated.ok) return;
-
-    // should not be auto-approved for normal ID
-    expect(validated.value.autoApprove).toBe(false);
-    const next = getNextKycStatus('REJECTED', validated.value.autoApprove);
-    expect(next).toBe('PENDING_REVIEW');
-
-    // after transitioning to PENDING_REVIEW resubmission is disallowed
-    expect(canResubmitKyc(next)).toBe(false);
-  });
-
-  it('REJECTED -> VERIFIED when auto-approved (TEST- national id)', () => {
-    const input = makeInput({ nationalIdNumber: 'TEST-9999' });
-    const validated = validateKycSubmission(input, 'REJECTED', NOW);
-    expect(validated.ok).toBe(true);
-    if (!validated.ok) return;
-
-    expect(validated.value.autoApprove).toBe(true);
-    const next = getNextKycStatus('REJECTED', validated.value.autoApprove);
-    expect(next).toBe('VERIFIED');
-
-    // VERIFIED must not allow resubmission
+    // both PENDING_REVIEW and VERIFIED disallow further resubmission
     expect(canResubmitKyc(next)).toBe(false);
   });
 
@@ -106,10 +67,12 @@ describe('KYC state transitions (composed)', () => {
     }
   });
 
-  it('canResubmitKyc returns expected values for all statuses', () => {
-    expect(canResubmitKyc('NOT_STARTED')).toBe(true);
-    expect(canResubmitKyc('REJECTED')).toBe(true);
-    expect(canResubmitKyc('PENDING_REVIEW')).toBe(false);
-    expect(canResubmitKyc('VERIFIED')).toBe(false);
+  it.each<['NOT_STARTED' | 'REJECTED' | 'PENDING_REVIEW' | 'VERIFIED', boolean]>([
+    ['NOT_STARTED',    true],
+    ['REJECTED',       true],
+    ['PENDING_REVIEW', false],
+    ['VERIFIED',       false],
+  ])('canResubmitKyc(%s) returns %s', (status, expected) => {
+    expect(canResubmitKyc(status)).toBe(expected);
   });
 });

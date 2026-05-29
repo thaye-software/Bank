@@ -167,30 +167,28 @@ describe('checkDailyLimit — CHECKING/SAVINGS transfer limit $10,000.00', () =>
   });
  
   describe('Rolling sum + requested amount interaction', () => {
-    it('rollingSum $9,999.99 + $0.01 = $10,000.00 (exactly at limit) → ok', () => {
-      const result = checkDailyLimit(new Decimal('9999.99'), new Decimal('0.01'), LIMIT);
-      expect(result.ok).toBe(true);
+    describe('Valid: rollingSum + requested == limit (exactly at limit)', () => {
+      it.each<[string, Decimal, Decimal]>([
+        ['rollingSum $9,999.99 + $0.01    = $10,000.00', new Decimal('9999.99'), new Decimal('0.01')],
+        ['rollingSum $5,000.00 + $5,000.00 = $10,000.00', new Decimal('5000.00'), new Decimal('5000.00')],
+      ])('%s → ok', (_label, rollingSum, requested) => {
+        const result = checkDailyLimit(rollingSum, requested, LIMIT);
+
+        expect(result.ok).toBe(true);
+      });
     });
- 
-    it('rollingSum $9,999.99 + $0.02 = $10,000.01 (just over limit) → DAILY_LIMIT_EXCEEDED', () => {
-      const result = checkDailyLimit(new Decimal('9999.99'), new Decimal('0.02'), LIMIT);
- 
-      expect(result.ok).toBe(false);
-      //@ts-expect-error result.error is BusinessRuleError
-      expect(result.error.code).toBe(ErrorCode.DAILY_LIMIT_EXCEEDED);
-    });
- 
-    it('rollingSum $5,000.00 + $5,000.00 = $10,000.00 (exactly at limit) → ok', () => {
-      const result = checkDailyLimit(new Decimal('5000.00'), new Decimal('5000.00'), LIMIT);
-      expect(result.ok).toBe(true);
-    });
- 
-    it('rollingSum $5,000.00 + $5,000.01 = $10,000.01 (just over limit) → DAILY_LIMIT_EXCEEDED', () => {
-      const result = checkDailyLimit(new Decimal('5000.00'), new Decimal('5000.01'), LIMIT);
- 
-      expect(result.ok).toBe(false);
-      //@ts-expect-error result.error is BusinessRuleError
-      expect(result.error.code).toBe(ErrorCode.DAILY_LIMIT_EXCEEDED);
+
+    describe('Invalid: rollingSum + requested > limit (just over)', () => {
+      it.each<[string, Decimal, Decimal]>([
+        ['rollingSum $9,999.99 + $0.02    = $10,000.01', new Decimal('9999.99'), new Decimal('0.02')],
+        ['rollingSum $5,000.00 + $5,000.01 = $10,000.01', new Decimal('5000.00'), new Decimal('5000.01')],
+      ])('%s → DAILY_LIMIT_EXCEEDED', (_label, rollingSum, requested) => {
+        const result = checkDailyLimit(rollingSum, requested, LIMIT);
+
+        expect(result.ok).toBe(false);
+        //@ts-expect-error result.error is BusinessRuleError
+        expect(result.error.code).toBe(ErrorCode.DAILY_LIMIT_EXCEEDED);
+      });
     });
   });
 });

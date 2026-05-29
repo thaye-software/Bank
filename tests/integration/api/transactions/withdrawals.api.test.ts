@@ -31,6 +31,7 @@ import http from 'http';
 //   §8      │ L69–L70                     │ Min balance / overdraft → 422
 //   §9      │ L48–L49                     │ Single-amount upper bound → 422
 //   §10     │ L88–L92                     │ Fraud blocked → 422 + signals row
+//   §11     │ L94, L101–L104              │ Overdraft fee → +1 FEE row, atomic
 //
 // Reading direction:
 //   Forward  (controller → test): look up a controller line in this matrix.
@@ -554,4 +555,70 @@ test('POST /withdraw — should return 422 FRAUD_BLOCKED and record the attempt 
   // Balance untouched — observable via the public API.
   const account = await getAccount(token, accountId);
   expect(new Decimal(account.balance).toFixed(2)).toBe('5000.00');
+});
+
+
+
+
+
+// ===========================================================================
+// §11. Overdraft fee — flat $35 FEE row created atomically with the WITHDRAWAL
+//      when the withdrawal pushes the post-balance below $0 on an
+//      overdraft-enabled CHECKING account.
+//
+// Traces controller lines:
+//   L94      — needsOverdraft = isOverdraftTriggered(balance, amount)
+//   L95      — newBalance     = balance − amount − OVERDRAFT_FEE
+//   L101–L104 — inside the same $transaction: a second updateBalance and a
+//               second txRepo.create({ type: 'FEE', amount: 35.00 })
+// Verifies:
+//   (1) when the post-balance goes negative, the response is 201, the
+//       transaction history contains TWO rows (one WITHDRAWAL, one FEE of
+//       $35), and the account balance reflects amount + $35;
+//   (2) when the post-balance stays ≥ $0, NO FEE row is created — the unit
+//       test pins the trigger predicate, this assertion pins the wiring.
+//
+// This is the persistence half of the rule "Each overdraft event incurs a
+// flat $35.00 fee, charged immediately as a separate transaction." The
+// trigger predicate and the $35 amount are unit-tested in
+// tests/unit/account/minimum.balance.unit.test.ts → "Overdraft fee policy".
+// ===========================================================================
+
+test('POST /withdraw — should create a separate $35 FEE transaction when the post-balance goes negative (overdraft enabled)', async () => {
+  const { token, accountId } = await createReadyAccount({ balance: '100.00', overdraftEnabled: true });
+
+  // 100 − 150.50 = −50.50 (overdraft triggers); final balance −50.50 − 35 = −85.50.
+  const response = await postWithdraw(token, { accountId, amount: '150.50' });
+
+  expect(response.status()).toBe(201);
+
+  const transactions = await listTransactions(token, accountId);
+  expect(transactions).toHaveLength(2);
+
+  const withdrawal = transactions.find((t) => t.type === 'WITHDRAWAL');
+  const fee = transactions.find((t) => t.type === 'FEE');
+  expect(withdrawal?.status).toBe('COMPLETED');
+  expect(new Decimal(withdrawal!.amount).toFixed(2)).toBe('150.50');
+  expect(fee?.status).toBe('COMPLETED');
+  expect(new Decimal(fee!.amount).toFixed(2)).toBe('35.00');
+
+  // Final committed balance = balance − amount − fee.
+  const account = await getAccount(token, accountId);
+  expect(new Decimal(account.balance).toFixed(2)).toBe('-85.50');
+});
+
+test('POST /withdraw — should NOT create a FEE transaction when the post-balance stays ≥ $0 (overdraft enabled but not triggered)', async () => {
+  const { token, accountId } = await createReadyAccount({ balance: '500.00', overdraftEnabled: true });
+
+  // 500 − 100 = 400 ≥ 0 → fee predicate is false → only the WITHDRAWAL row.
+  const response = await postWithdraw(token, { accountId, amount: '100.00' });
+
+  expect(response.status()).toBe(201);
+
+  const transactions = await listTransactions(token, accountId);
+  expect(transactions).toHaveLength(1);
+  expect(transactions[0]?.type).toBe('WITHDRAWAL');
+
+  const account = await getAccount(token, accountId);
+  expect(new Decimal(account.balance).toFixed(2)).toBe('400.00');
 });

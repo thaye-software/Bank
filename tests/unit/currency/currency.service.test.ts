@@ -41,24 +41,13 @@ describe("7.1 Supported Currencies", () => {
     clearCache();
   });
 
-  it("should reject unsupported fromCurrency", async () => {
+  it.each<[string, string, string]>([
+    ["unsupported fromCurrency", "XYZ", "USD"],
+    ["unsupported toCurrency",   "USD", "XYZ"],
+  ])("should reject %s", async (_label, fromCurrency, toCurrency) => {
     const result = await calculateConversion({
-      fromCurrency: "XYZ",
-      toCurrency: "USD",
-      amount: new Decimal(100),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
-
-    expect(isErr(result)).toBe(true);
-    if (isErr(result)) {
-      expect(result.error.code).toBe(ErrorCode.UNSUPPORTED_CURRENCY);
-    }
-  });
-
-  it("should reject unsupported toCurrency", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "XYZ",
+      fromCurrency,
+      toCurrency,
       amount: new Decimal(100),
       rollingDailyConversionUsd: new Decimal(1000),
     });
@@ -249,116 +238,73 @@ describe("7.5 Conversion Limits", () => {
     clearCache();
   });
 
-  it("should reject conversion below minimum amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(0.99),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
+  describe("single-amount valid partition: $1.00 .. $25,000.00", () => {
+    it.each<[string, Decimal]>([
+      ["BV $1.00 (lower boundary — minimum)",         new Decimal(1)],
+      ["BV $1.01 (just above lower boundary)",        new Decimal(1.01)],
+      ["BV $24,999.99 (just below upper boundary)",   new Decimal(24999.99)],
+      ["BV $25,000.00 (upper boundary — maximum)",    new Decimal(25000)],
+    ])("should accept %s", async (_label, amount) => {
+      const result = await calculateConversion({
+        fromCurrency: "USD",
+        toCurrency: "EUR",
+        amount,
+        rollingDailyConversionUsd: new Decimal(1000),
+      });
 
-    expect(isErr(result)).toBe(true);
-    if (isErr(result)) {
-      expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_LOW);
-    }
+      expect(result.ok).toBe(true);
+    });
   });
 
-  it("should accept conversion at minimum amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(1),
-      rollingDailyConversionUsd: new Decimal(1000),
+  describe("single-amount invalid partitions", () => {
+    it.each<[string, Decimal, ErrorCode]>([
+      ["BV $0.99 (just below minimum)",         new Decimal(0.99),     ErrorCode.AMOUNT_TOO_LOW],
+      ["BV $25,000.01 (just above maximum)",    new Decimal(25000.01), ErrorCode.AMOUNT_TOO_HIGH],
+    ])("should reject %s", async (_label, amount, expectedCode) => {
+      const result = await calculateConversion({
+        fromCurrency: "USD",
+        toCurrency: "EUR",
+        amount,
+        rollingDailyConversionUsd: new Decimal(1000),
+      });
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.code).toBe(expectedCode);
+      }
     });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("should accept conversion just above minimum single amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(1.01),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("should accept conversion at just below maximum single amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(24999.99),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("should accept conversion at maximum single amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(25000),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("should reject conversion above maximum single amount", async () => {
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(25000.01),
-      rollingDailyConversionUsd: new Decimal(1000),
-    });
-
-    expect(isErr(result)).toBe(true);
-    if (isErr(result)) {
-      expect(result.error.code).toBe(ErrorCode.AMOUNT_TOO_HIGH);
-    }
   });
 
   // Daily rolling limit boundary (max daily = $50,000)
-  it("should accept conversion that keeps rolling total just under daily limit", async () => {
-    // $24,999 + $25,000 existing = $49,999 (under $50,000)
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(24999),
-      rollingDailyConversionUsd: new Decimal(25000),
+  describe("daily rolling limit ($50,000)", () => {
+    it.each<[string, Decimal, Decimal]>([
+      ["just under: $24,999 + $25,000 rolling = $49,999", new Decimal(24999), new Decimal(25000)],
+      ["exactly at: $25,000 + $25,000 rolling = $50,000", new Decimal(25000), new Decimal(25000)],
+    ])("should accept conversion %s", async (_label, amount, rollingDailyConversionUsd) => {
+      const result = await calculateConversion({
+        fromCurrency: "USD",
+        toCurrency: "EUR",
+        amount,
+        rollingDailyConversionUsd,
+      });
+
+      expect(result.ok).toBe(true);
     });
 
-    expect(result.ok).toBe(true);
-  });
+    it("should reject conversion that would exceed the daily limit", async () => {
+      // $1 + $50,000.01 existing = over $50,000
+      const result = await calculateConversion({
+        fromCurrency: "USD",
+        toCurrency: "EUR",
+        amount: new Decimal(1),
+        rollingDailyConversionUsd: new Decimal("50000.01"),
+      });
 
-  it("should accept conversion that hits the daily limit exactly", async () => {
-    // $25,000 + $25,000 existing = $50,000 (at limit)
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(25000),
-      rollingDailyConversionUsd: new Decimal(25000),
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.code).toBe(ErrorCode.DAILY_LIMIT_EXCEEDED);
+      }
     });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("should reject conversion that would exceed the daily limit", async () => {
-    // $1 + $50,000.01 existing = over $50,000
-    const result = await calculateConversion({
-      fromCurrency: "USD",
-      toCurrency: "EUR",
-      amount: new Decimal(1),
-      rollingDailyConversionUsd: new Decimal("50000.01"),
-    });
-
-    expect(isErr(result)).toBe(true);
-    if (isErr(result)) {
-      expect(result.error.code).toBe(ErrorCode.DAILY_LIMIT_EXCEEDED);
-    }
   });
 
 

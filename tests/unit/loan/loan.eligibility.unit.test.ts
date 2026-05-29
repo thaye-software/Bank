@@ -1,19 +1,17 @@
 /*
- * Branch coverage map — loan.eligibility.unit.test.ts
+ * Branch coverage map — loan.eligibility.unit.test.ts (whitebox)
  *
- * R1 age           : <18, ==0, ==18, >18
- * R2 KYC           : PENDING, REJECTED, VERIFIED
- * R3 employment    : UNEMPLOYED, EMPLOYED, SELF_EMPLOYED, RETIRED
- * R4 credit min    : <500, ==0, ==500
- * R5 amount min    : <500, ==0, ==500
- * R6 amount max    : >500_000, ==500_000
- * R7 term          : valid set {12,24,36,48,60}, 6, 18, 0
- * R8 active loans  : >=3, >3, ==2
- * R9 income        : ==0, <0, >0
- * tier cap         : exceed cap per tier, at cap
- * DTI              : >50%, marginal+lowCredit, marginal+highCredit
- * APR cap          : direct test via calculateApr (was tautological before)
+ * Rule coverage lives in dedicated files, kept out of here to avoid duplication:
+ *   R1–R9 hard rejections  → loan.hard-rejection.unit.test.ts (EP/BV blackbox)
+ *   AMOUNT_EXCEEDS_CREDIT_LIMIT → credit.limit.unit.test.ts
+ *   DTI_TOO_HIGH / DTI_MARGINAL_LOW_CREDIT → dti.unit.test.ts
+ *
+ * This file covers the helper math and decision plumbing nothing else reaches:
+ *
  * pmt              : zero rate, positive rate, invalid term guard
+ * getCreditTier    : null below 500, null above 850, top/bottom tier
+ * calculateApr     : modifiers + 25% cap (direct, was tautological before)
+ * approval         : output shape, APR through-flow, monotonicity
  * priority         : R1 wins over R2, R2 wins over R3
  */
 
@@ -28,6 +26,7 @@ import {
   type LoanRejection,
 } from '../../../src/domain/loans/loan.eligibility';
 import { ErrorCode } from '../../../src/shared/errors';
+import type { EmploymentStatus } from '../../../src/domain/accounts/account.types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,12 +78,11 @@ describe('pmt()', () => {
     expect(monthly * 24).toBeGreaterThan(10_000);
   });
 
-  it('throws RangeError when termMonths is 0', () => {
-    expect(() => pmt(0.07, 0, 10_000)).toThrow(RangeError);
-  });
-
-  it('throws RangeError when termMonths is negative', () => {
-    expect(() => pmt(0.07, -12, 10_000)).toThrow(RangeError);
+  it.each<[string, number]>([
+    ['zero',     0],
+    ['negative', -12],
+  ])('throws RangeError when termMonths is %s', (_label, termMonths) => {
+    expect(() => pmt(0.07, termMonths, 10_000)).toThrow(RangeError);
   });
 });
 
@@ -93,24 +91,24 @@ describe('pmt()', () => {
 // ---------------------------------------------------------------------------
 
 describe('getCreditTier()', () => {
-  it('returns null for scores below 500', () => {
-    expect(getCreditTier(499)).toBeNull();
+  it.each<[string, number]>([
+    ['below 500 (499)', 499],
+    ['above 850 (851)', 851],
+  ])('returns null for scores %s', (_label, score) => {
+    expect(getCreditTier(score)).toBeNull();
   });
 
-  it('returns null for scores above 850', () => {
-    expect(getCreditTier(851)).toBeNull();
-  });
+  it.each<[string, number, number, number]>([
+    ['750–850 (800)', 800, 0.05,  500_000],
+    ['700–749 (725)', 725, 0.07,  250_000],
+    ['650–699 (675)', 675, 0.095, 100_000],
+    ['600–649 (625)', 625, 0.13,   50_000],
+    ['500–599 (550)', 550, 0.18,   20_000],
+  ])('tier %s → correct baseRate and maxLoanAmount', (_label, score, baseRate, maxLoanAmount) => {
+    const tier = getCreditTier(score);
 
-  it('returns the top tier for 750+', () => {
-    const tier = getCreditTier(800);
-    expect(tier?.baseRate).toBe(0.05);
-    expect(tier?.maxLoanAmount).toBe(500_000);
-  });
-
-  it('returns the bottom tier for 500–599', () => {
-    const tier = getCreditTier(550);
-    expect(tier?.baseRate).toBe(0.18);
-    expect(tier?.maxLoanAmount).toBe(20_000);
+    expect(tier?.baseRate).toBe(baseRate);
+    expect(tier?.maxLoanAmount).toBe(maxLoanAmount);
   });
 });
 
@@ -119,311 +117,29 @@ describe('getCreditTier()', () => {
 // ---------------------------------------------------------------------------
 
 describe('calculateApr()', () => {
-  it('adds the SELF_EMPLOYED modifier (+1.5%) to base rate', () => {
-    expect(calculateApr(0.07, 'SELF_EMPLOYED')).toBeCloseTo(0.085, 5);
+  // Employment modifier added to a 7% base rate (UNEMPLOYED never reaches here
+  // in practice — R3 blocks it — but its modifier is still 0).
+  it.each<[EmploymentStatus, number]>([
+    ['SELF_EMPLOYED', 0.085],
+    ['RETIRED',       0.075],
+    ['EMPLOYED',      0.07],
+    ['UNEMPLOYED',    0.07],
+  ])('applies the %s modifier to a 7%% base rate', (status, expected) => {
+    expect(calculateApr(0.07, status)).toBeCloseTo(expected, 5);
   });
 
-  it('adds the RETIRED modifier (+0.5%) to base rate', () => {
-    expect(calculateApr(0.07, 'RETIRED')).toBeCloseTo(0.075, 5);
+  it.each<[string, number, EmploymentStatus]>([
+    ['24% + 1.5% self-employed → 25.5%', 0.24, 'SELF_EMPLOYED'],
+    ['30% base employed',                0.30, 'EMPLOYED'],
+  ])('caps at 25% when %s', (_label, baseRate, status) => {
+    expect(calculateApr(baseRate, status)).toBe(0.25);
   });
 
-  it('applies no modifier for EMPLOYED', () => {
-    expect(calculateApr(0.07, 'EMPLOYED')).toBeCloseTo(0.07, 5);
-  });
-
-  it('applies no modifier for UNEMPLOYED (rule R3 blocks them earlier anyway)', () => {
-    expect(calculateApr(0.07, 'UNEMPLOYED')).toBeCloseTo(0.07, 5);
-  });
-
-  it('caps at 25% when base + modifier would exceed cap', () => {
-    // 24% + 1.5% = 25.5% → capped at 25%
-    expect(calculateApr(0.24, 'SELF_EMPLOYED')).toBe(0.25);
-  });
-
-  it('caps at 25% even with extreme base rates', () => {
-    expect(calculateApr(0.30, 'EMPLOYED')).toBe(0.25);
-  });
-
-  it('does not cap below MAX_APR', () => {
+  it('does not cap when base + modifier is below 25%', () => {
     expect(calculateApr(0.10, 'EMPLOYED')).toBeLessThan(0.25);
   });
 });
 
-// ---------------------------------------------------------------------------
-// R1 — Applicant age
-// ---------------------------------------------------------------------------
-
-describe('R1 — applicant age', () => {
-  it('rejects applicant under 18', () => {
-    const result = rejected({ ...BASE_INPUT, applicantAge: 17 });
-    expect(result.rejectionCode).toBe(ErrorCode.APPLICANT_UNDERAGE);
-  });
-
-  it('rejects applicant exactly 0 years old', () => {
-    const result = rejected({ ...BASE_INPUT, applicantAge: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.APPLICANT_UNDERAGE);
-  });
-
-  it('accepts applicant exactly 18 years old', () => {
-    approved({ ...BASE_INPUT, applicantAge: 18 });
-  });
-
-  it('accepts applicant well over 18', () => {
-    approved({ ...BASE_INPUT, applicantAge: 55 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R2 — KYC status
-// ---------------------------------------------------------------------------
-
-describe('R2 — KYC verification', () => {
-  it('rejects when KYC is PENDING', () => {
-    const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING_REVIEW' });
-    expect(result.rejectionCode).toBe(ErrorCode.KYC_NOT_VERIFIED);
-  });
-
-  it('rejects when KYC is REJECTED', () => {
-    const result = rejected({ ...BASE_INPUT, kycStatus: 'REJECTED' });
-    expect(result.rejectionCode).toBe(ErrorCode.KYC_NOT_VERIFIED);
-  });
-
-  it('accepts when KYC is VERIFIED', () => {
-    approved({ ...BASE_INPUT, kycStatus: 'VERIFIED' });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R3 — Employment status
-// ---------------------------------------------------------------------------
-
-describe('R3 — employment status', () => {
-  it('rejects UNEMPLOYED applicants', () => {
-    const result = rejected({ ...BASE_INPUT, employmentStatus: 'UNEMPLOYED' });
-    expect(result.rejectionCode).toBe(ErrorCode.UNEMPLOYED_APPLICANT);
-  });
-
-  it('accepts EMPLOYED applicants', () => {
-    approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
-  });
-
-  it('accepts SELF_EMPLOYED applicants', () => {
-    approved({ ...BASE_INPUT, employmentStatus: 'SELF_EMPLOYED' });
-  });
-
-  it('accepts RETIRED applicants', () => {
-    approved({ ...BASE_INPUT, employmentStatus: 'RETIRED' });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R4 — Credit score minimum
-// ---------------------------------------------------------------------------
-
-describe('R4 — credit score minimum', () => {
-  it('rejects credit score below 500', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 499 });
-    expect(result.rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
-  });
-
-  it('rejects credit score of 0', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
-  });
-
-  it('accepts credit score exactly at 500', () => {
-    approved({ ...BASE_INPUT, creditScore: 500, requestedAmount: 1_000 });
-  });
-
-  it('rejects credit score above 850 as outside eligible range', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 900 });
-    expect(result.rejectionCode).toBe(ErrorCode.CREDIT_SCORE_TOO_LOW);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R5 — Minimum loan amount
-// ---------------------------------------------------------------------------
-
-describe('R5 — minimum loan amount', () => {
-  it('rejects amount below $500', () => {
-    const result = rejected({ ...BASE_INPUT, requestedAmount: 499 });
-    expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_LOW);
-  });
-
-  it('rejects amount of $0', () => {
-    const result = rejected({ ...BASE_INPUT, requestedAmount: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_LOW);
-  });
-
-  it('accepts amount exactly at $500', () => {
-    approved({ ...BASE_INPUT, requestedAmount: 500 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R6 — Maximum loan amount
-// ---------------------------------------------------------------------------
-
-describe('R6 — maximum loan amount', () => {
-  it('rejects amount above $500,000', () => {
-    const result = rejected({ ...BASE_INPUT, requestedAmount: 500_001 });
-    expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
-  });
-
-  it('accepts amount exactly at $500,000 (high credit score, 60-month term)', () => {
-    // Must use a 60-month term — a 24-month payoff of $500k at 5% APR is
-    // ~$21,936/mo, which against $500k income ($41,666/mo) lands at 52.6% DTI
-    // and trips DTI_TOO_HIGH. The 60-month payment drops to ~$9,435/mo (22.6% DTI).
-    approved({
-      ...BASE_INPUT,
-      requestedAmount: 500_000,
-      requestedTermMonths: 60,
-      creditScore: 800,
-      annualIncome: 500_000,
-      monthlyDebt: 0,
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R7 — Valid loan term
-// ---------------------------------------------------------------------------
-
-describe('R7 — loan term', () => {
-  it.each([12, 24, 36, 48, 60])('accepts valid term of %d months', (term) => {
-    approved({ ...BASE_INPUT, requestedTermMonths: term });
-  });
-
-  it('rejects term of 6 months', () => {
-    const result = rejected({ ...BASE_INPUT, requestedTermMonths: 6 });
-    expect(result.rejectionCode).toBe(ErrorCode.INVALID_LOAN_TERM);
-  });
-
-  it('rejects term of 18 months', () => {
-    const result = rejected({ ...BASE_INPUT, requestedTermMonths: 18 });
-    expect(result.rejectionCode).toBe(ErrorCode.INVALID_LOAN_TERM);
-  });
-
-  it('rejects term of 0 months', () => {
-    const result = rejected({ ...BASE_INPUT, requestedTermMonths: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.INVALID_LOAN_TERM);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R8 — Existing active loans
-// ---------------------------------------------------------------------------
-
-describe('R8 — existing active loans', () => {
-  it('rejects when applicant already has 3 active loans', () => {
-    const result = rejected({ ...BASE_INPUT, existingLoansCount: 3 });
-    expect(result.rejectionCode).toBe(ErrorCode.TOO_MANY_ACTIVE_LOANS);
-  });
-
-  it('rejects when applicant has more than 3 active loans', () => {
-    const result = rejected({ ...BASE_INPUT, existingLoansCount: 5 });
-    expect(result.rejectionCode).toBe(ErrorCode.TOO_MANY_ACTIVE_LOANS);
-  });
-
-  it('accepts when applicant has exactly 2 active loans', () => {
-    approved({ ...BASE_INPUT, existingLoansCount: 2 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// R9 — Annual income
-// ---------------------------------------------------------------------------
-
-describe('R9 — annual income', () => {
-  it('rejects zero income', () => {
-    const result = rejected({ ...BASE_INPUT, annualIncome: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.INVALID_INCOME);
-  });
-
-  it('rejects negative income', () => {
-    const result = rejected({ ...BASE_INPUT, annualIncome: -1 });
-    expect(result.rejectionCode).toBe(ErrorCode.INVALID_INCOME);
-  });
-
-  it('accepts positive income (with debt scaled to keep DTI viable)', () => {
-    // Note: annualIncome:1 + monthlyDebt:200 → DTI is astronomical, which would
-    // hit DTI_TOO_HIGH, not approval. The previous test passed by accident.
-    // Use a sensible low-but-positive income with zero debt.
-    approved({ ...BASE_INPUT, annualIncome: 30_000, monthlyDebt: 0 });
-  });
-
-  it('rejects extreme low income via DTI rather than R9', () => {
-    // annualIncome:1 means monthlyIncome ≈ $0.083 → any payment blows DTI past 50%
-    const result = rejected({ ...BASE_INPUT, annualIncome: 1, monthlyDebt: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_TOO_HIGH);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Credit tier — amount limit per tier
-// ---------------------------------------------------------------------------
-
-describe('credit tier — amount limit', () => {
-  it('rejects amount exceeding tier cap for score 500–599 (max $20k)', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 550, requestedAmount: 20_001 });
-    expect(result.rejectionCode).toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-  });
-
-  it('rejects amount exceeding tier cap for score 600–649 (max $50k)', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 620, requestedAmount: 50_001 });
-    expect(result.rejectionCode).toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-  });
-
-  it('rejects amount exceeding tier cap for score 650–699 (max $100k)', () => {
-    const result = rejected({ ...BASE_INPUT, creditScore: 680, requestedAmount: 100_001, annualIncome: 300_000 });
-    expect(result.rejectionCode).toBe(ErrorCode.AMOUNT_EXCEEDS_CREDIT_LIMIT);
-  });
-
-  it(`accepts amount at the exact cap for the applicant's tier`, () => {
-    approved({ ...BASE_INPUT, creditScore: 550, requestedAmount: 20_000, annualIncome: 200_000, monthlyDebt: 0 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DTI checks
-// ---------------------------------------------------------------------------
-
-describe('DTI — debt-to-income ratio', () => {
-  it('rejects when DTI exceeds 50%', () => {
-    const result = rejected({
-      ...BASE_INPUT,
-      annualIncome: 24_000,   // $2,000/month
-      monthlyDebt: 1_500,      // already 75% DTI before loan payment
-    });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_TOO_HIGH);
-  });
-
-  it('rejects marginal DTI (>43%) combined with credit score below 650', () => {
-    // monthlyIncome = 3_000; loan payment ≈ $114; existing debt $1_250
-    // → (1_250 + 114) / 3_000 = 45.5% — squarely in the 43–50% marginal band.
-    const result = rejected({
-      ...BASE_INPUT,
-      creditScore: 620,
-      annualIncome: 36_000,
-      monthlyDebt: 1_250,
-      requestedAmount: 5_000,
-      requestedTermMonths: 60,
-    });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_MARGINAL_LOW_CREDIT);
-  });
-
-  it('accepts marginal DTI when credit score is 650 or above', () => {
-    approved({
-      ...BASE_INPUT,
-      creditScore: 650,
-      annualIncome: 36_000,
-      monthlyDebt: 1_250,
-      requestedAmount: 5_000,
-      requestedTermMonths: 60,
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Approval — output shape and APR through-flow
@@ -438,17 +154,15 @@ describe('approval — output correctness', () => {
     expect(result.monthlyPayment).toBeGreaterThan(0);
   });
 
-  it('applies SELF_EMPLOYED rate modifier through the full evaluation', () => {
-    const employed = approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
-    const selfEmployed = approved({ ...BASE_INPUT, employmentStatus: 'SELF_EMPLOYED' });
-    expect(selfEmployed.apr).toBeGreaterThan(employed.apr);
-  });
+  it.each<EmploymentStatus>(['SELF_EMPLOYED', 'RETIRED'])(
+    'applies the %s rate modifier through the full evaluation',
+    (status) => {
+      const employed = approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
+      const modified = approved({ ...BASE_INPUT, employmentStatus: status });
 
-  it('applies RETIRED rate modifier through the full evaluation', () => {
-    const employed = approved({ ...BASE_INPUT, employmentStatus: 'EMPLOYED' });
-    const retired = approved({ ...BASE_INPUT, employmentStatus: 'RETIRED' });
-    expect(retired.apr).toBeGreaterThan(employed.apr);
-  });
+      expect(modified.apr).toBeGreaterThan(employed.apr);
+    },
+  );
 
   it('approved APR is always at or below MAX_APR (25%)', () => {
     // Verifies the cap propagates through evaluateLoanApplication.
@@ -483,12 +197,12 @@ describe('approval — output correctness', () => {
 
 describe('rule priority', () => {
   it('rejects on age before checking KYC', () => {
-    const result = rejected({ ...BASE_INPUT, applicantAge: 16, kycStatus: 'PENDING' });
+    const result = rejected({ ...BASE_INPUT, applicantAge: 16, kycStatus: 'PENDING_REVIEW' });
     expect(result.rejectionCode).toBe(ErrorCode.APPLICANT_UNDERAGE);
   });
 
   it('rejects on KYC before checking employment', () => {
-    const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING', employmentStatus: 'UNEMPLOYED' });
+    const result = rejected({ ...BASE_INPUT, kycStatus: 'PENDING_REVIEW', employmentStatus: 'UNEMPLOYED' });
     expect(result.rejectionCode).toBe(ErrorCode.KYC_NOT_VERIFIED);
   });
 
