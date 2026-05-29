@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-NordicBank is a full-stack monolithic application — a TypeScript/Express.js backend with a React + Vite frontend — that simulates a retail and small-business banking platform. It is the subject of a Software Quality exam project whose explicit goal is to demonstrate every major software testing technique against a rich, realistic domain. The codebase intentionally contains complex branching logic (loan approval, fraud detection, interest tiers), an AI-powered Loan Assessment Agent (Claude API), external API integration (currencyapi.com), and stateful database operations so that every technique — unit, blackbox, whitebox, mocking rationale, integration, API, database, E2E, stress, and static — can be meaningfully applied and examined.
+NordicBank is a full-stack monolithic application — a TypeScript/Express.js backend with a React + Vite frontend — that simulates a retail and small-business banking platform. It is the subject of a Software Quality exam project whose explicit goal is to demonstrate every major software testing technique against a rich, realistic domain. The codebase intentionally contains complex branching logic (loan approval, fraud detection, interest tiers), external API integration (currencyapi.com), and stateful database operations so that every technique — unit, blackbox, whitebox, mocking rationale, integration, API, database, E2E, stress, and static — can be meaningfully applied and examined.
 
 ## Quick Commands
 
@@ -48,7 +48,6 @@ src/                                   # Express backend
       fraud.detector.ts                # Additive risk scoring (7 signals)
     loans/
       loan.eligibility.ts              # Rule-based approval — 26+ decision branches
-      loan.assessment.agent.ts         # Claude-powered narrative risk summary
     currency/
       currency.service.ts              # Wraps currencyapi.com, applies fees
       rate.cache.ts                    # In-memory TTL cache
@@ -78,7 +77,7 @@ client/                                # React + Vite frontend
       Dashboard.tsx                    # Account overview and recent transactions
       Accounts.tsx                     # Account management
       Transactions.tsx                 # Transaction history and initiate transfer
-      LoanApplication.tsx              # Loan form + AI assessment display
+      LoanApplication.tsx              # Loan form + decision display
       CurrencyConvert.tsx              # Currency conversion UI
       Login.tsx
     components/                        # Shared UI components
@@ -127,7 +126,7 @@ tsconfig.json                          # Backend tsconfig
 - Every `AppError` has: `code: string`, `message: string`, `httpStatus: number`, optional `details`.
 - Domain functions never throw — they return `Result<T, AppError>`.
 - Controllers unwrap `Result` and call `next(error)` on failure.
-- External API errors (currencyapi.com, Claude API) are wrapped in `ExternalServiceError extends AppError`.
+- External API errors (currencyapi.com) are wrapped in `ExternalServiceError extends AppError`.
 
 ### Validation
 - All request bodies validated with Zod schemas before reaching controllers.
@@ -153,16 +152,14 @@ tsconfig.json                          # Backend tsconfig
 ## Test Philosophy
 
 ### When to mock
-- **External HTTP APIs** (currencyapi.com, Claude API): always mock in unit and integration tests. Use `msw` to intercept at the network level so the actual call path is exercised without hitting real services.
+- **External HTTP APIs** (currencyapi.com): always mock in unit and integration tests. Use `msw` to intercept at the network level so the actual call path is exercised without hitting real services.
 - **Database in unit tests**: mock repositories with `vi.fn()` so domain logic is tested without Postgres.
 - **Time** (`Date.now`, `new Date()`): mock with `vi.useFakeTimers()` when rules depend on current time (fraud velocity, interest periods, rate cache TTL).
-- **Claude API in unit tests**: mock the Anthropic SDK client to assert prompt construction and response handling independently of model behaviour.
 
 ### When NOT to mock
 - **Database in integration tests**: must use a real Postgres test database. Catches constraint violations, migration regressions, and lock behaviour that mocks cannot simulate.
 - **Express middleware stack**: API integration tests spin up the full app via supertest — auth, validation, and error handling all exercised together.
 - **Domain logic in controller tests**: mocking the domain layer only tests HTTP plumbing. Use full integration tests instead.
-- **Claude API in designated AI integration tests**: a small set of integration tests (gated by `ENABLE_REAL_AI_TESTS=true`) call the real Claude API to verify prompt/response shape does not regress.
 
 ### Coverage targets
 - `src/domain/**`: 90% statement, 85% branch

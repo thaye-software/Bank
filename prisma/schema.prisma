@@ -198,9 +198,6 @@ model LoanApplication {
   apr                   Decimal?         @db.Decimal(6, 4)
   monthlyPayment        Decimal?         @db.Decimal(15, 2)
   rejectionCode         String?
-  assessmentRiskLevel   String?
-  assessmentSummary     String?
-  assessmentWatchPoints String[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -5,7 +5,6 @@ import { LoanRepository } from '../repositories/loan.repository';
 import { AccountRepository } from '../repositories/account.repository';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { evaluateLoanApplication } from '../domain/loans/loan.eligibility';
-import { runLoanAssessment } from '../domain/loans/loan.assessment.agent';
 import type { LoanApplicationInput } from '../domain/loans/loan.eligibility';
 import type { AppDeps } from '../app';
 
@@ -61,10 +60,7 @@ export function makeLoansController(deps: AppDeps) {
     if (!decisionResult.ok) throw decisionResult.error;
     const decision = decisionResult.value;
 
-    const assessment =
-      decision.decision === 'APPROVED' ? await runLoanAssessment(input) : null;
-
-    const record = await loanRepo.create(userId, body.accountId, input, decision, assessment);
+    const record = await loanRepo.create(userId, body.accountId, input, decision);
 
     const status = decision.decision === 'APPROVED' ? 201 : 200;
     res.status(status).json({ success: true, data: record });

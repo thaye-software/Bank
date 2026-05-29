@@ -37,7 +37,6 @@ jobs:
       # Database URL is required by env.ts validation but not used by pure domain tests
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
-      ANTHROPIC_API_KEY: dummy-key
       CURRENCY_API_KEY: dummy-key
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +84,6 @@ jobs:
       TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@localhost:5432/nordicbank_test
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
       # External APIs are mocked with msw in integration tests — real keys not needed
-      ANTHROPIC_API_KEY: dummy-key
       CURRENCY_API_KEY: ${{ secrets.CURRENCY_API_KEY }}
       ENABLE_KYC_AUTO_APPROVE: "true"
     steps:
@@ -149,7 +147,6 @@ jobs:
       DATABASE_URL: postgresql://nordicbank:nordicbank@postgres:5432/nordicbank_e2e
       TEST_DATABASE_URL: postgresql://nordicbank:nordicbank@postgres:5432/nordicbank_e2e
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
-      ANTHROPIC_API_KEY: dummy-key
       CURRENCY_API_KEY: dummy-key
       ENABLE_KYC_AUTO_APPROVE: "true"
       PORT: 3000
@@ -212,7 +209,6 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
       JWT_SECRET: ci-test-secret-nordicbank-at-least-32-chars
-      ANTHROPIC_API_KEY: dummy-key
       CURRENCY_API_KEY: dummy-key
     steps:
       - uses: actions/checkout@v4

@@ -25,12 +25,6 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-function riskBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' {
-  if (level === 'HIGH') return 'destructive';
-  if (level === 'MODERATE') return 'secondary';
-  return 'default';
-}
-
 export function LoanApplication() {
   const { data: accounts } = useAccounts();
   const { mutate, isPending, error, isSuccess, data } = useApplyForLoan();
@@ -161,25 +155,6 @@ export function LoanApplication() {
                     <div><p className="text-muted-foreground">Term</p><p className="font-semibold">{data.termMonths} months</p></div>
                     <div><p className="text-muted-foreground">Monthly payment</p><p className="font-semibold">${data.monthlyPayment?.toFixed(2)}</p></div>
                   </div>
-
-                  {data.assessment !== undefined && data.assessment !== null && (
-                    <div className="rounded-lg border p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold">AI Risk Assessment</p>
-                        <Badge variant={riskBadgeVariant(data.assessment.riskLevel)}>
-                          {data.assessment.riskLevel}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{data.assessment.summary}</p>
-                      {data.assessment.watchPoints.length > 0 && (
-                        <ul className="list-disc pl-4 text-sm text-muted-foreground space-y-1">
-                          {data.assessment.watchPoints.map((point, i) => (
-                            <li key={i}>{point}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
                 </>
               ) : (
                 <Alert variant="destructive" role="alert">

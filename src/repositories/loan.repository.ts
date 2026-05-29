@@ -1,7 +1,6 @@
 import type { PrismaClient } from '@db';
 import Decimal from 'decimal.js';
 import type { LoanApplicationInput, LoanDecisionResult } from '../domain/loans/loan.eligibility';
-import type { AssessmentResult } from '../domain/loans/loan.assessment.agent';
 
 export interface LoanApplicationRecord {
   id: string;
@@ -12,7 +11,6 @@ export interface LoanApplicationRecord {
   apr?: number;
   monthlyPayment?: number;
   rejectionCode?: string;
-  assessment?: AssessmentResult;
   createdAt: Date;
 }
 
@@ -30,7 +28,6 @@ export class LoanRepository {
     accountId: string,
     input: LoanApplicationInput,
     decision: LoanDecisionResult,
-    assessment: AssessmentResult | null,
   ): Promise<LoanApplicationRecord> {
     const row = await this.db.loanApplication.create({
       data: {
@@ -46,9 +43,6 @@ export class LoanRepository {
         apr: decision.decision === 'APPROVED' ? new Decimal(decision.apr).toFixed(4) : null,
         monthlyPayment: decision.decision === 'APPROVED' ? new Decimal(decision.monthlyPayment).toFixed(2) : null,
         rejectionCode: decision.decision === 'REJECTED' ? decision.rejectionCode : null,
-        assessmentRiskLevel: assessment?.riskLevel ?? null,
-        assessmentSummary: assessment?.summary ?? null,
-        assessmentWatchPoints: assessment?.watchPoints ?? [],
       },
     });
 
@@ -61,7 +55,6 @@ export class LoanRepository {
       apr: row.apr ? Number(row.apr.toString()) : undefined,
       monthlyPayment: row.monthlyPayment ? Number(row.monthlyPayment.toString()) : undefined,
       rejectionCode: row.rejectionCode ?? undefined,
-      assessment: assessment ?? undefined,
       createdAt: row.createdAt,
     };
   }
@@ -80,13 +73,6 @@ export class LoanRepository {
       apr: row.apr ? Number(row.apr.toString()) : undefined,
       monthlyPayment: row.monthlyPayment ? Number(row.monthlyPayment.toString()) : undefined,
       rejectionCode: row.rejectionCode ?? undefined,
-      assessment: row.assessmentRiskLevel
-        ? {
-            riskLevel: row.assessmentRiskLevel as AssessmentResult['riskLevel'],
-            summary: row.assessmentSummary ?? '',
-            watchPoints: row.assessmentWatchPoints,
-          }
-        : undefined,
       createdAt: row.createdAt,
     }));
   }

@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Decimal from 'decimal.js';
 import {
-  checkPostTransactionBalance,
-  isOverdraftTriggered,
-  OVERDRAFT_FEE,
+  checkPostTransactionBalance
 } from '../../../src/domain/accounts/account.rules';
 import { ErrorCode } from '../../../src/shared/errors';
 

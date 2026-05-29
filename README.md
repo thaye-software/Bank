@@ -4,7 +4,7 @@ A full-stack monolithic banking application built for a Software Quality exam pr
 
 **Stack:**
 
-- **Backend:** TypeScript · Express · PostgreSQL · Prisma 7 · Claude API · currencyapi.com
+- **Backend:** TypeScript · Express · PostgreSQL · Prisma 7 · currencyapi.com
 - **Frontend:** React 18 · Vite · React Query · React Hook Form · Tailwind CSS
 - **Testing:** Vitest · Playwright (Chromium / Firefox / WebKit) · SonarCloud
 
@@ -35,7 +35,6 @@ Fill in the remaining values:
 | Variable | Required | Notes |
 |---|---|---|
 | `JWT_SECRET` | Yes | Any string ≥ 32 characters |
-| `ANTHROPIC_API_KEY` | No | Loan AI assessment — endpoint degrades gracefully without it |
 | `CURRENCY_API_KEY` | No | Currency conversion — endpoint degrades gracefully without it |
 
 ### Step 3 — Install dependencies and prepare the database
@@ -262,7 +261,7 @@ src/                 # Express backend
   controllers/       # HTTP handlers — parse, call domain, format response
   repositories/      # All Prisma DB access
   middleware/        # Auth, validation, error handling
-  config/            # Env vars (Zod-validated), logger, Anthropic client
+  config/            # Env vars (Zod-validated), logger
   shared/            # Result<T,E> type, AppError hierarchy
 
 client/              # React + Vite frontend (own package.json, own lockfile)
