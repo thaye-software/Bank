@@ -151,7 +151,6 @@ const ELIGIBILITY_RULES: readonly EligibilityRule[] = [
 // Helpers (exported for direct unit-testing)
 // ---------------------------------------------------------------------------
 
-
 export function pmt(annualRate: number, termMonths: number, principal: number): number {
   if (termMonths <= 0) {
     throw new RangeError(`pmt: termMonths must be > 0, got ${termMonths}`);
