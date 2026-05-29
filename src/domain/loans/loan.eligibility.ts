@@ -13,9 +13,6 @@ const MIN_CREDIT_SCORE = 500;
 const MIN_LOAN_AMOUNT = 500;
 const MAX_LOAN_AMOUNT = 500_000;
 const MIN_AGE = 18;
-const MAX_DTI = 0.5;
-const MARGINAL_DTI = 0.43;
-const MARGINAL_CREDIT_SCORE = 650;
 const MAX_APR = 0.25;
 
 const SELF_EMPLOYED_RATE_MODIFIER = 0.015;
@@ -37,7 +34,6 @@ interface CreditScoreTier {
 export interface LoanApplicationInput {
   readonly applicantAge: number;
   readonly annualIncome: number;
-  readonly monthlyDebt: number;
   readonly requestedAmount: number;
   readonly requestedTermMonths: number;
   readonly creditScore: number;
@@ -171,18 +167,6 @@ export function calculateApr(baseRate: number, employmentStatus: EmploymentStatu
   return Math.min(baseRate + modifier, MAX_APR);
 }
 
-export function calculateDti(
-  monthlyDebt: number,
-  annualIncome: number,
-  apr: number,
-  termMonths: number,
-  loanAmount: number,
-): number {
-  const monthlyPayment = pmt(apr, termMonths, loanAmount);
-  const monthlyIncome = annualIncome / 12;
-  return (monthlyDebt + monthlyPayment) / monthlyIncome;
-}
-
 function reject(
   rejectionCode: ErrorCodeType,
   rejectionMessage: string,
@@ -218,28 +202,6 @@ export function evaluateLoanApplication(
   }
 
   const apr = calculateApr(tier.baseRate, input.employmentStatus);
-
-  const dti = calculateDti(
-    input.monthlyDebt,
-    input.annualIncome,
-    apr,
-    input.requestedTermMonths,
-    input.requestedAmount,
-  );
-
-  if (dti > MAX_DTI) {
-    return reject(
-      ErrorCode.DTI_TOO_HIGH,
-      `Debt-to-income ratio of ${(dti * 100).toFixed(1)}% exceeds the 50% limit`,
-    );
-  }
-
-  if (dti > MARGINAL_DTI && input.creditScore < MARGINAL_CREDIT_SCORE) {
-    return reject(
-      ErrorCode.DTI_MARGINAL_LOW_CREDIT,
-      `DTI of ${(dti * 100).toFixed(1)}% is too high for a credit score below ${MARGINAL_CREDIT_SCORE}`,
-    );
-  }
 
   const monthlyPayment = pmt(apr, input.requestedTermMonths, input.requestedAmount);
 

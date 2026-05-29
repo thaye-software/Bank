@@ -54,7 +54,6 @@ describe('buildUserPrompt', () => {
     const input = buildLoanApplication({
       creditScore: 720,
       annualIncome: 60_000,
-      monthlyDebt: 500,
       requestedAmount: 15_000,
       requestedTermMonths: 36,
       applicantAge: 30,
@@ -70,7 +69,6 @@ describe('buildUserPrompt', () => {
     expect(parsed['requestedAmount']).toBe(15_000);
     expect(parsed['requestedTermMonths']).toBe(36);
     expect(parsed['applicantAge']).toBe(30);
-    expect(parsed['existingMonthlyDebt']).toBe(500);
   });
 
   it('should compute monthlyIncome as annualIncome / 12 rounded to 2 decimal places', () => {
@@ -82,14 +80,6 @@ describe('buildUserPrompt', () => {
     expect(parsed['monthlyIncome']).toBe('5000.00');
   });
 
-  it('should compute debtToIncomeRatio as a percentage string', () => {
-    // monthlyDebt 500 / monthlyIncome (60_000/12 = 5_000) = 10.0%
-    const input = buildLoanApplication({ annualIncome: 60_000, monthlyDebt: 500 });
-
-    const parsed = JSON.parse(buildUserPrompt(input)) as Record<string, unknown>;
-
-    expect(parsed['debtToIncomeRatio']).toBe('10.0%');
-  });
 });
 
 // ---------------------------------------------------------------------------

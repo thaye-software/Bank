@@ -191,7 +191,6 @@ model LoanApplication {
   requestedAmount       Decimal          @db.Decimal(15, 2)
   requestedTermMonths   Int
   annualIncome          Decimal          @db.Decimal(15, 2)
-  monthlyDebt           Decimal          @db.Decimal(15, 2)
   creditScore           Int
   employmentStatus      EmploymentStatus
   decision              LoanDecision

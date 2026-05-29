@@ -39,7 +39,6 @@ export class LoanRepository {
         requestedAmount: new Decimal(input.requestedAmount).toFixed(2),
         requestedTermMonths: input.requestedTermMonths,
         annualIncome: new Decimal(input.annualIncome).toFixed(2),
-        monthlyDebt: new Decimal(input.monthlyDebt).toFixed(2),
         creditScore: input.creditScore,
         employmentStatus: input.employmentStatus,
         decision: decision.decision,

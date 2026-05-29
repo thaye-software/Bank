@@ -4,7 +4,6 @@
  * Rule coverage lives in dedicated files, kept out of here to avoid duplication:
  *   R1–R9 hard rejections  → loan.hard-rejection.unit.test.ts (EP/BV blackbox)
  *   AMOUNT_EXCEEDS_CREDIT_LIMIT → credit.limit.unit.test.ts
- *   DTI_TOO_HIGH / DTI_MARGINAL_LOW_CREDIT → dti.unit.test.ts
  *
  * This file covers the helper math and decision plumbing nothing else reaches:
  *
@@ -35,7 +34,6 @@ import type { EmploymentStatus } from '../../../src/domain/accounts/account.type
 const BASE_INPUT: LoanApplicationInput = {
   applicantAge: 30,
   annualIncome: 60_000,
-  monthlyDebt: 200,
   requestedAmount: 10_000,
   requestedTermMonths: 24,
   creditScore: 700,
@@ -354,8 +352,6 @@ describe('APR cap at 25.00%', () => {
       creditScore: 500,
       requestedAmount: 10_000,
       employmentStatus: 'SELF_EMPLOYED',
-      annualIncome: 200_000,
-      monthlyDebt: 0,
     });
 
     expect(result.apr).toBe(0.195);
@@ -484,17 +480,12 @@ describe('R6 — maximum loan amount', () => {
     expect(result.rejectionCode).toBe(ErrorCode.LOAN_AMOUNT_TOO_HIGH);
   });
 
-  it('accepts amount exactly at $500,000 (high credit score, 60-month term)', () => {
-    // Must use a 60-month term — a 24-month payoff of $500k at 5% APR is
-    // ~$21,936/mo, which against $500k income ($41,666/mo) lands at 52.6% DTI
-    // and trips DTI_TOO_HIGH. The 60-month payment drops to ~$9,435/mo (22.6% DTI).
+  it('accepts amount exactly at $500,000 (high credit score)', () => {
     approved({
       ...BASE_INPUT,
       requestedAmount: 500_000,
       requestedTermMonths: 60,
       creditScore: 800,
-      annualIncome: 500_000,
-      monthlyDebt: 0,
     });
   });
 });
@@ -559,17 +550,8 @@ describe('R9 — annual income', () => {
     expect(result.rejectionCode).toBe(ErrorCode.INVALID_INCOME);
   });
 
-  it('accepts positive income (with debt scaled to keep DTI viable)', () => {
-    // Note: annualIncome:1 + monthlyDebt:200 → DTI is astronomical, which would
-    // hit DTI_TOO_HIGH, not approval. The previous test passed by accident.
-    // Use a sensible low-but-positive income with zero debt.
-    approved({ ...BASE_INPUT, annualIncome: 30_000, monthlyDebt: 0 });
-  });
-
-  it('rejects extreme low income via DTI rather than R9', () => {
-    // annualIncome:1 means monthlyIncome ≈ $0.083 → any payment blows DTI past 50%
-    const result = rejected({ ...BASE_INPUT, annualIncome: 1, monthlyDebt: 0 });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_TOO_HIGH);
+  it('accepts positive income', () => {
+    approved({ ...BASE_INPUT, annualIncome: 30_000 });
   });
 });
 
@@ -594,47 +576,7 @@ describe('credit tier — amount limit', () => {
   });
 
   it(`accepts amount at the exact cap for the applicant's tier`, () => {
-    approved({ ...BASE_INPUT, creditScore: 550, requestedAmount: 20_000, annualIncome: 200_000, monthlyDebt: 0 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DTI checks
-// ---------------------------------------------------------------------------
-
-describe('DTI — debt-to-income ratio', () => {
-  it('rejects when DTI exceeds 50%', () => {
-    const result = rejected({
-      ...BASE_INPUT,
-      annualIncome: 24_000,   // $2,000/month
-      monthlyDebt: 1_500,      // already 75% DTI before loan payment
-    });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_TOO_HIGH);
-  });
-
-  it('rejects marginal DTI (>43%) combined with credit score below 650', () => {
-    // monthlyIncome = 3_000; loan payment ≈ $114; existing debt $1_250
-    // → (1_250 + 114) / 3_000 = 45.5% — squarely in the 43–50% marginal band.
-    const result = rejected({
-      ...BASE_INPUT,
-      creditScore: 620,
-      annualIncome: 36_000,
-      monthlyDebt: 1_250,
-      requestedAmount: 5_000,
-      requestedTermMonths: 60,
-    });
-    expect(result.rejectionCode).toBe(ErrorCode.DTI_MARGINAL_LOW_CREDIT);
-  });
-
-  it('accepts marginal DTI when credit score is 650 or above', () => {
-    approved({
-      ...BASE_INPUT,
-      creditScore: 650,
-      annualIncome: 36_000,
-      monthlyDebt: 1_250,
-      requestedAmount: 5_000,
-      requestedTermMonths: 60,
-    });
+    approved({ ...BASE_INPUT, creditScore: 550, requestedAmount: 20_000 });
   });
 });
 
@@ -669,8 +611,6 @@ describe('approval — output correctness', () => {
       creditScore: 500,
       requestedAmount: 1_000,
       employmentStatus: 'SELF_EMPLOYED',
-      annualIncome: 200_000,
-      monthlyDebt: 0,
     });
     expect(result.apr).toBeLessThanOrEqual(0.25);
   });

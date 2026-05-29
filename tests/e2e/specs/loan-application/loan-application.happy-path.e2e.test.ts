@@ -16,7 +16,6 @@ test('Happy path for loan application — APPROVED with score 850, EMPLOYED, $10
     requestedAmount: '10000',
     termMonths: 12,
     annualIncome: '100000',
-    monthlyDebt: '0',
     age: '21',
     creditScore: '850',
   });

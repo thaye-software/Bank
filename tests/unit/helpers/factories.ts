@@ -4,7 +4,6 @@ export function buildLoanApplication(overrides?: Partial<LoanApplicationInput>):
   return {
     applicantAge: 30,
     annualIncome: 80_000,
-    monthlyDebt: 500,
     requestedAmount: 20_000,
     requestedTermMonths: 36,
     creditScore: 720,

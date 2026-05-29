@@ -155,15 +155,7 @@ Final APR = base + modifier, capped at **25.00%**.
 
 If `requestedAmount > maxForScore` → `AMOUNT_EXCEEDS_CREDIT_LIMIT`.
 
-### 6.5 Debt-to-Income Check
 
-```
-proposedMonthlyPayment = PMT(monthlyRate, termMonths, requestedAmount)  // standard amortisation
-DTI = (monthlyDebt + proposedMonthlyPayment) / (annualIncome / 12)
-```
-
-- `DTI > 0.50` → `DTI_TOO_HIGH`
-- `DTI > 0.43` AND `creditScore < 650` → `DTI_MARGINAL_LOW_CREDIT`
 
 ### 6.6 Decision
 

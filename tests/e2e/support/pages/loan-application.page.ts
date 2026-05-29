@@ -9,7 +9,6 @@ export interface LoanApplicationInput {
   readonly requestedAmount: string;
   readonly termMonths: LoanTerm;
   readonly annualIncome: string;
-  readonly monthlyDebt: string;
   readonly age: string;
   readonly creditScore: string;
   // Defaults to EMPLOYED in the form — only set when a non-default value is needed.
@@ -40,7 +39,6 @@ export class LoanApplicationPage {
     await this.page.getByRole('option', { name: `${input.termMonths} months` }).click();
 
     await this.page.getByRole('spinbutton', { name: 'Annual income ($)' }).fill(input.annualIncome);
-    await this.page.getByRole('spinbutton', { name: 'Monthly debt ($)' }).fill(input.monthlyDebt);
     await this.page.getByRole('spinbutton', { name: 'Age' }).fill(input.age);
     await this.page.getByRole('spinbutton', { name: 'Credit score' }).fill(input.creditScore);
 

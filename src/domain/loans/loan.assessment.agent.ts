@@ -22,23 +22,20 @@ Always respond with valid JSON matching exactly this schema:
 }
 
 Guidelines:
-- LOW: strong credit, stable employment, comfortable DTI
-- MODERATE: acceptable credit with minor concerns, self-employed, or borderline DTI
-- HIGH: near-minimum credit score, high DTI, short employment history, or large loan relative to income
+- LOW: strong credit, stable employment, loan well within tier limit
+- MODERATE: acceptable credit with minor concerns, self-employed, or loan approaching tier limit
+- HIGH: near-minimum credit score, short employment history, or large loan relative to income
 - watchPoints should be actionable, specific concerns (empty array is valid for LOW risk)
 - Respond ONLY with the JSON object, no markdown, no explanation`;
 
 export function buildUserPrompt(input: LoanApplicationInput): string {
   const monthlyIncome = (input.annualIncome / 12).toFixed(2);
-  const dti = ((input.monthlyDebt / (input.annualIncome / 12)) * 100).toFixed(1);
 
   return JSON.stringify({
     creditScore: input.creditScore,
     employmentStatus: input.employmentStatus,
     annualIncome: input.annualIncome,
     monthlyIncome,
-    existingMonthlyDebt: input.monthlyDebt,
-    debtToIncomeRatio: `${dti}%`,
     requestedAmount: input.requestedAmount,
     requestedTermMonths: input.requestedTermMonths,
     applicantAge: input.applicantAge,

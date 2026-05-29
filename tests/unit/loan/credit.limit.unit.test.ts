@@ -34,7 +34,6 @@ import { ErrorCode } from '../../../src/shared/errors';
 const BASE_INPUT: LoanApplicationInput = {
   applicantAge: 35,
   annualIncome: 10_000_000,
-  monthlyDebt: 0,
   requestedAmount: 1_000,
   requestedTermMonths: 60,
   creditScore: 700,
@@ -42,6 +41,8 @@ const BASE_INPUT: LoanApplicationInput = {
   kycStatus: 'VERIFIED',
   existingLoansCount: 0,
 };
+
+
 
 function approved(input: LoanApplicationInput): LoanApproval {
   const result = evaluateLoanApplication(input);

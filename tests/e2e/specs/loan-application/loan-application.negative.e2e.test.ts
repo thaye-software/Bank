@@ -1,7 +1,7 @@
 import { test, expect } from '../../support/fixtures';
 
 // Negative E2E for the loan application flow. The exhaustive rule-by-rule
-// rejection matrix (R1–R9 + DTI + amount-vs-tier) lives at the unit layer in
+// rejection matrix (R1–R9 + amount-vs-tier) lives at the unit layer in
 // loan.eligibility.ts — this test exists to prove that when the backend
 // returns a REJECTED decision, the user-facing UI surfaces it.
 //
@@ -21,7 +21,6 @@ test('shows REJECTED when credit score is below the 500 minimum', async ({ loanA
     requestedAmount: '10000',
     termMonths: 12,
     annualIncome: '100000',
-    monthlyDebt: '0',
     age: '21',
     creditScore: '400',
   });
