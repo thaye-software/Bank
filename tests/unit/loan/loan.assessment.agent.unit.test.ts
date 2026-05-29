@@ -188,39 +188,23 @@ describe('runLoanAssessment', () => {
     expect(typeof call.system[0]!.text).toBe('string');
   });
 
-  it('should return null when the API throws an error', async () => {
-    const input = buildLoanApplication();
-    const client = mockClientError(new Error('Service unavailable'));
+  describe('should return null on degenerate API responses', () => {
+    it.each<[string, () => MockClient]>([
+      ['the API throws an error',
+        () => mockClientError(new Error('Service unavailable')) as unknown as MockClient],
+      ['the API response contains no text block',
+        () => mockClientNoText() as unknown as MockClient],
+      ['the API response text fails schema validation',
+        () => mockClient(JSON.stringify({ riskLevel: 'BOGUS', summary: 'ok', watchPoints: [] })) as unknown as MockClient],
+      ['the API response text is not valid JSON',
+        () => mockClient('Sorry, I cannot help with that.') as unknown as MockClient],
+    ])('when %s → null', async (_label, makeClient) => {
+      const input = buildLoanApplication();
+      const client = makeClient();
 
-    const result = await runLoanAssessment(input, client as unknown as MockClient);
+      const result = await runLoanAssessment(input, client);
 
-    expect(result).toBeNull();
-  });
-
-  it('should return null when the API response contains no text block', async () => {
-    const input = buildLoanApplication();
-    const client = mockClientNoText();
-
-    const result = await runLoanAssessment(input, client as unknown as MockClient);
-
-    expect(result).toBeNull();
-  });
-
-  it('should return null when the API response text fails schema validation', async () => {
-    const input = buildLoanApplication();
-    const client = mockClient(JSON.stringify({ riskLevel: 'BOGUS', summary: 'ok', watchPoints: [] }));
-
-    const result = await runLoanAssessment(input, client as unknown as MockClient);
-
-    expect(result).toBeNull();
-  });
-
-  it('should return null when the API response text is not valid JSON', async () => {
-    const input = buildLoanApplication();
-    const client = mockClient('Sorry, I cannot help with that.');
-
-    const result = await runLoanAssessment(input, client as unknown as MockClient);
-
-    expect(result).toBeNull();
+      expect(result).toBeNull();
+    });
   });
 });
