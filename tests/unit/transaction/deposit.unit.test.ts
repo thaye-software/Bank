@@ -42,9 +42,13 @@ describe('validateDepositAmount — EP + BVA ($0.01 .. $1,000,000.00)', () => {
   });
  
   describe('Valid partition: $0.01 .. $10,000.00', () => {
+  describe('Valid partition: $0.01 .. $10,000.00', () => {
     it.each<[string, Decimal]>([
       ['BV $0.01 (lower boundary)',                  new Decimal('0.01')],
       ['BV $0.02 (just above lower boundary)',       new Decimal('0.02')],
+      ['EP $5,000.00 (mean value)',                  new Decimal('5000.00')],
+      ['BV $9,999.99 (just below upper boundary)',   new Decimal('9999.99')],
+      ['BV $10,000.00 (upper boundary)',            new Decimal('10000.00')],
       ['EP $5,000.00 (mean value)',                  new Decimal('5000.00')],
       ['BV $9,999.99 (just below upper boundary)',   new Decimal('9999.99')],
       ['BV $10,000.00 (upper boundary)',            new Decimal('10000.00')],
@@ -80,6 +84,7 @@ describe('shouldAmlFlag — EP + BVA (threshold $10,000.00, strict greater-than)
     it.each<[string, Decimal]>([
       ['BV $0.01 (lower boundary)',                  new Decimal('0.01')],
       ['BV $0.02 (just above lower boundary)',       new Decimal('0.02')],
+      ['BV $0.02 (just above lower boundary)',       new Decimal('0.02')],
       ['EP $5,000.00 (mean value)',                  new Decimal('5000.00')],
       ['BV $9,999.99 (just below threshold)',        new Decimal('9999.99')],
       ['BV $10,000.00 (at threshold — NOT flagged)', new Decimal('10000.00')],
@@ -93,6 +98,10 @@ describe('shouldAmlFlag — EP + BVA (threshold $10,000.00, strict greater-than)
       ['BV $10,000.01 (lower boundary — first flagged)', new Decimal('10000.01')],
       ['BV $10,000.02 (just above lower boundary)',      new Decimal('10000.02')],
       ['EP $50,000.00 (mean value)',                     new Decimal('50000.00')],
+      ['BV $999,999.99 (just below upper boundary)',     new Decimal('999999.99')],
+      ['BV $1,000,000.00 (upper boundary)',              new Decimal('1000000.00')],
+      ['BV MAX DECIMAL - 0.01',                          MAX_DECIMAL.minus('0.01')],
+      ['BV MAX DECIMAL',                                 MAX_DECIMAL],
       ['BV $999,999.99 (just below upper boundary)',     new Decimal('999999.99')],
       ['BV $1,000,000.00 (upper boundary)',              new Decimal('1000000.00')],
       ['BV MAX DECIMAL - 0.01',                          MAX_DECIMAL.minus('0.01')],
