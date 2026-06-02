@@ -132,6 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.1-jammy
+      options: --network host
     services:
       postgres:
         image: postgres:16
