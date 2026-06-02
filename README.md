@@ -283,3 +283,4 @@ prisma/
   schema.prisma      # Database schema
   seed.ts            # Dev fixtures (idempotent)
 ```
+# Test CI trigger
