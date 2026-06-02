@@ -32,21 +32,25 @@
     "test:unit:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:integration:db:coverage": "vitest run --config vitest.integration.config.ts --coverage",
     "test:api:coverage": "node scripts/playwright-coverage.js coverage/raw-api coverage/playwright-api -- --project=api-integration --workers=4",
+    
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+
     "test:stress:withdraw": "node tests/stress/scripts/run-stress.mjs",
     "test:stress": "node tests/stress/scripts/run-stress.mjs",
     "test:stress:deposit": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/stress/deposit-contention.stress.jmx",
     "test:stress:account-read": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/stress/account-read.stress.jmx",
     "test:stress:transfer": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/stress/transfer.stress.jmx",
     "test:stress:mixed": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/stress/mixed-workload.stress.jmx",
+
     "test:load:withdraw": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/withdraw.load.jmx",
     "test:load:deposit": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/deposit.load.jmx",
     "test:load:account-read": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/account-read.load.jmx",
     "test:load:transfer": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/transfer.load.jmx",
     "test:load:mixed": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/load/mixed-workload.load.jmx",
+
     "test:spike:withdraw": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/spike/withdraw.spike.jmx",
     "test:spike:deposit": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/spike/deposit.spike.jmx",
     "test:spike:account-read": "node tests/stress/scripts/run-stress.mjs --plan tests/stress/jmeter/spike/account-read.spike.jmx",
