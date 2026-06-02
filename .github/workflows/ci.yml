@@ -131,7 +131,7 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.59.1-jammy
+      image: mcr.microsoft.com/playwright:v1.60.1-jammy
     services:
       postgres:
         image: postgres:16
