@@ -17,7 +17,7 @@ export function makeAuthController(deps: AppDeps) {
     const user = await userRepo.create({ email, password: hashed, fullName });
     const token = signToken({ userId: user.id, email: user.email, role: user.role });
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
       data: {
         token,

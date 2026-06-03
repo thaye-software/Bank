@@ -197,6 +197,56 @@ Prereqs:
           <stringProp name="filename"></stringProp>
         </ResultCollector>
         <hashTree/>
+        <JSR223Listener guiclass="TestBeanGUI" testclass="JSR223Listener" testname="Auto-stop on breaking point" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="script">import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.atomic.AtomicBoolean
+
+final long   WINDOW_MS = 30_000L
+final double ERR_LIMIT = 0.01       // 1 %
+final long   P95_LIMIT = 5_000L     // ms
+
+synchronized (props) {
+    if (props.get('bp_samples') == null) {
+        props.put('bp_samples', new ConcurrentLinkedDeque())
+        props.put('bp_stopped', new AtomicBoolean(false))
+    }
+}
+
+def stopped = (AtomicBoolean) props.get('bp_stopped')
+if (stopped.get()) return
+
+def samples = (ConcurrentLinkedDeque) props.get('bp_samples')
+long now = System.currentTimeMillis()
+samples.add([now, (long) prev.getTime(), prev.isSuccessful() ? 0L : 1L])
+
+long cutoff = now - WINDOW_MS
+while (!samples.isEmpty()) {
+    def head = samples.peekFirst()
+    if (head != null &amp;&amp; (long) head[0] &lt; cutoff) samples.pollFirst()
+    else break
+}
+
+def snap = samples.toList()
+if (snap.size() &lt; 30) return
+
+long errCount = snap.count { (long) it[2] == 1L }
+double errRate = errCount / (double) snap.size()
+
+def times = snap.collect { (long) it[1] }.sort()
+long p95 = times[(int)(times.size() * 0.95)]
+
+if ((errRate &gt; ERR_LIMIT || p95 &gt; P95_LIMIT) &amp;&amp; stopped.compareAndSet(false, true)) {
+    log.warn(String.format(
+        'BREAKING POINT — error_rate=%.2f%% p95=%dms window=%d samples — stopping test',
+        errRate * 100, p95, snap.size()))
+    ctx.getEngine().stopTest(true)
+}</stringProp>
+        </JSR223Listener>
+        <hashTree/>
         <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree (debug only — disable in CLI)" enabled="false">
           <boolProp name="ResultCollector.error_logging">true</boolProp>
           <objProp>
